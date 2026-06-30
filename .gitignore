@@ -5,3 +5,15 @@
 thoughts/
 
 node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+dist/
+build/
+.pytest_cache/
+
+# Базы данных
+*.db

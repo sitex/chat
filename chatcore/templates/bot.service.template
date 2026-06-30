@@ -1,0 +1,14 @@
+[Unit]
+Description={{ BOT_DESCRIPTION }}
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/rocky/projects/{{ BOT_DIR }}
+EnvironmentFile=%h/projects/{{ BOT_DIR }}/.env
+ExecStart=/home/rocky/projects/{{ BOT_DIR }}/.venv/bin/python {{ ENTRYPOINT }}
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
