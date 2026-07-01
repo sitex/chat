@@ -1,15 +1,18 @@
-"""LLM-движок: cliproxy → grok → claude → ollama.
+"""LLM-движок: cliproxy → grok → claude-cli → claude → ollama.
 
 Выбор через переменные окружения:
-  LLM_BACKEND=auto|grok|cliproxy|claude|ollama
+  LLM_BACKEND=auto|grok|cliproxy|claude-cli|claude|ollama
     auto: cliproxy если есть CLIPROXY_API_KEY,
           иначе grok если есть GROK_BIN,
+          иначе claude-cli если есть CLAUDE_CLI_BIN,
           иначе claude если есть ANTHROPIC_API_KEY,
           иначе ollama
   CLIPROXY_BASE_URL=         (cliproxyapi; оставить пустым если не используется)
   CLIPROXY_API_KEY=...
   CLIPROXY_MODEL=claude-sonnet-4-6
   GROK_BIN=~/.grok/bin/grok  (путь к Grok CLI)
+  CLAUDE_CLI_BIN=~/.nvm/versions/node/v22.19.0/bin/claude  (путь к claude CLI)
+  CLAUDE_CLI_TIMEOUT=45
   ANTHROPIC_API_KEY=...
   CLAUDE_MODEL=claude-sonnet-4-6
   OLLAMA_HOST=http://localhost:11434
@@ -47,6 +50,10 @@ LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "25"))
 # не зависал бесконечно (иначе обработчик сообщения молчит навсегда).
 LLM_OVERALL_TIMEOUT = int(os.environ.get("LLM_OVERALL_TIMEOUT", "60"))
 GROK_TIMEOUT = int(os.environ.get("GROK_TIMEOUT", "45"))
+CLAUDE_CLI_BIN = os.path.expanduser(
+    os.environ.get("CLAUDE_CLI_BIN", "/home/rocky/.nvm/versions/node/v22.19.0/bin/claude")
+)
+CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
 
 CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
 CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
@@ -60,6 +67,8 @@ def _resolve_backend() -> str:
             return "cliproxy"
         if os.path.isfile(GROK_BIN):
             return "grok"
+        if os.path.isfile(CLAUDE_CLI_BIN):
+            return "claude-cli"
         return "claude" if os.environ.get("ANTHROPIC_API_KEY") else "ollama"
     return backend
 
@@ -86,6 +95,22 @@ async def _grok(system: str, messages: list[dict]) -> str:
     )
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        proc.kill()
+        raise
+    return stdout.decode().strip()
+
+
+async def _claude_cli(system: str, messages: list[dict]) -> str:
+    prompt = _flatten_messages(messages)
+    proc = await asyncio.create_subprocess_exec(
+        CLAUDE_CLI_BIN, "-p", prompt,
+        "--system-prompt", system,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
         proc.kill()
         raise
@@ -153,7 +178,17 @@ async def _cascade(backend: str, system: str, messages: list[dict]) -> str:
         try:
             return await _grok(system, messages)
         except Exception as e:
-            log.warning("grok failed (%s), falling back to ollama", e)
+            log.warning("grok failed (%s), falling back to claude-cli", e)
+            try:
+                return await _claude_cli(system, messages)
+            except Exception as e2:
+                log.warning("claude-cli fallback failed (%s), falling back to ollama", e2)
+                return await _ollama(system, messages)
+    if backend == "claude-cli":
+        try:
+            return await _claude_cli(system, messages)
+        except Exception as e:
+            log.warning("claude-cli failed (%s), falling back to ollama", e)
             return await _ollama(system, messages)
     if backend == "claude":
         try:
