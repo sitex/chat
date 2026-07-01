@@ -49,6 +49,11 @@ chatcore/
 | **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json` |
 | **David Key** | [chat-davidkey](../chat-davidkey) | `david-key-bot` (уточнить через @BotFather — новый бот без токена) | RAG по NLP + гипнотерапии, на chatcore |
 | **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | `davidkey_quiz_bot` (хэндл уточнить) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
+| **Мария** | [chat-socialself](../chat-socialself) | *(хэндл уточнить после выдачи токена)* | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
+| **Ачарья Дас** | [chat-acharya-das](../chat-acharya-das) | *(хэндл уточнить после выдачи токена)* | Ведический учитель, Бхагавад-Гита, RAG по 754 фактам |
+| **Marni Kinrys** | [chat-marni](../chat-marni) | *(хэндл уточнить после выдачи токена)* | Wing Girl dating coach, RAG по 238 фактам |
+| **Dan Bilzerian** | [chat-sigma](../chat-sigma) | *(хэндл уточнить после выдачи токена)* | Sigma Society, self-improvement, RAG по 264 фактам |
+| **Luke Hawkins** | [chat-lukehawkins](../chat-lukehawkins) | *(хэндл уточнить после выдачи токена)* | NTT-коуч, career coaching, RAG по 394 фактам |
 
 > **Примечание:** хэндлы без ссылок — уточнить через @BotFather (`/mybots`) и обновить README.
 
@@ -66,11 +71,12 @@ chatcore/
 
 Кандидаты из `study-*` с богатым контентом и живой персоной:
 
-**Tier 1 — высокий приоритет (named харизматичный учитель):**
-- `chat-acharya-das` — Ачарья Дас, Бхагавад-Гита (RU, прямой аналог vishvanath)
-- `chat-marni` — Marni, dating & relationship coach
-- `chat-lukehawkins` — Luke Hawkins, career coaching
-- `chat-sigma` — Sigma Society, self-improvement
+**Tier 1 — ✅ созданы (named харизматичный учитель):**
+- [x] `chat-socialself` — Мария, психолог по соцнавыкам, Fast Friend Protocol
+- [x] `chat-acharya-das` — Ачарья Дас, Бхагавад-Гита (RU, прямой аналог vishvanath)
+- [x] `chat-marni` — Marni, dating & relationship coach
+- [x] `chat-lukehawkins` — Luke Hawkins, career coaching
+- [x] `chat-sigma` — Sigma Society, self-improvement
 
 **Tier 2 — гид по учению:**
 - `chat-gita`, `chat-yoga-vasistha`, `chat-vedanta`, `chat-ifs`, `chat-smysl`

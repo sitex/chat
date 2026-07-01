@@ -11,7 +11,7 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: |
-          pip install -e "../chat[dev]"
+          pip install "chatcore[dev] @ git+https://github.com/sitex/chat.git"
           pip install -r requirements.txt
       - name: Compile check
         run: python -m compileall -q .
