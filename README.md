@@ -45,8 +45,8 @@ chatcore/
 |-----|-------------------|----------|-------------|
 | **Патрик Джейн** | [chat-mentalist](../chat-mentalist) | [@mentalist_jane_bot](https://t.me/mentalist_jane_bot) | Загадки со seen-state, уроки, типы личности |
 | **Эдвард Манникс** | [chat-mannix](../chat-mannix) | [@mannix_clearing_bot](https://t.me/mannix_clearing_bot) | TTS (OmniVoice), web-фронтенд FastAPI |
-| **Lee Jacobs** | [chat-jacobs](../chat-jacobs) | [@unwritten_system_bot](https://t.me/unwritten_system_bot) | Концепты, практики, диагностика OS |
-| **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json` |
+| **Lee Jacobs** | [chat-jacobs](../chat-jacobs) | [@unwritten_system_bot](https://t.me/unwritten_system_bot) | Концепты, практики, диагностика OS, на chatcore |
+| **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json`, на chatcore |
 | **David Key** | [chat-davidkey](../chat-davidkey) | `david-key-bot` (уточнить через @BotFather — новый бот без токена) | RAG по NLP + гипнотерапии, на chatcore |
 | **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | `davidkey_quiz_bot` (хэндл уточнить) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
 | **Мария** | [chat-socialself](../chat-socialself) | *(хэндл уточнить после выдачи токена)* | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
@@ -61,8 +61,8 @@ chatcore/
 
 - [x] **chat-mentalist** — мигрирован как эталон
 - [x] **chat-davidkey** — создан на chatcore с нуля
-- [ ] **chat-jacobs** — follow-up: заменить src/llm+memory+persona+data_store
-- [ ] **chat-vishvanath** — follow-up: то же + retrieval уже в chatcore
+- [x] **chat-jacobs** — мигрирован (JacobsScaffold, rolling-summary)
+- [x] **chat-vishvanath** — мигрирован (scaffold.run + RAG study_paths)
 - [ ] **chat-mannix** — follow-up: нетипичный (TTS/web/CLI), отдельная задача
 - [ ] **study-socialself** — вынести в chat-socialself (quiz + chatcore)
 - [ ] **study-read-people** — мигрировать bot/ на chatcore
