@@ -47,15 +47,13 @@ chatcore/
 | **Эдвард Манникс** | [chat-mannix](../chat-mannix) | [@mannix_clearing_bot](https://t.me/mannix_clearing_bot) | TTS (OmniVoice), web-фронтенд FastAPI |
 | **Lee Jacobs** | [chat-jacobs](../chat-jacobs) | [@unwritten_system_bot](https://t.me/unwritten_system_bot) | Концепты, практики, диагностика OS, на chatcore |
 | **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json`, на chatcore |
-| **David Key** | [chat-davidkey](../chat-davidkey) | `david-key-bot` (уточнить через @BotFather — новый бот без токена) | RAG по NLP + гипнотерапии, на chatcore |
-| **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | `davidkey_quiz_bot` (хэндл уточнить) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
-| **Мария** | [chat-socialself](../chat-socialself) | *(хэндл уточнить после выдачи токена)* | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
-| **Ачарья Дас** | [chat-acharya-das](../chat-acharya-das) | *(хэндл уточнить после выдачи токена)* | Ведический учитель, Бхагавад-Гита, RAG по 754 фактам |
-| **Marni Kinrys** | [chat-marni](../chat-marni) | *(хэндл уточнить после выдачи токена)* | Wing Girl dating coach, RAG по 238 фактам |
-| **Dan Bilzerian** | [chat-sigma](../chat-sigma) | *(хэндл уточнить после выдачи токена)* | Sigma Society, self-improvement, RAG по 264 фактам |
-| **Luke Hawkins** | [chat-lukehawkins](../chat-lukehawkins) | *(хэндл уточнить после выдачи токена)* | NTT-коуч, career coaching, RAG по 394 фактам |
-
-> **Примечание:** хэндлы без ссылок — уточнить через @BotFather (`/mybots`) и обновить README.
+| **David Key** | [chat-davidkey](../chat-davidkey) | *(хэндл уточнить 2026-07-03)* | RAG по NLP + гипнотерапии, на chatcore |
+| **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | [@davidkey_quiz_bot](https://t.me/davidkey_quiz_bot) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
+| **Мария** | [chat-socialself](../chat-socialself) | [@maria_socialself_bot](https://t.me/maria_socialself_bot) | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
+| **Ачарья Дас** | [chat-acharya-das](../chat-acharya-das) | [@acharya_das_gita_bot](https://t.me/acharya_das_gita_bot) | Ведический учитель, Бхагавад-Гита, RAG по 754 фактам |
+| **Marni Kinrys** | [chat-marni](../chat-marni) | [@marni_kinrys_bot](https://t.me/marni_kinrys_bot) | Wing Girl dating coach, RAG по 238 фактам |
+| **Dan Bilzerian** | [chat-sigma](../chat-sigma) | [@dan_sigma_bot](https://t.me/dan_sigma_bot) | Sigma Society, self-improvement, RAG по 264 фактам |
+| **Luke Hawkins** | [chat-lukehawkins](../chat-lukehawkins) | [@luke_hawkins_bot](https://t.me/luke_hawkins_bot) | NTT-коуч, career coaching, RAG по 394 фактам |
 
 ## Статус миграции на chatcore
 
