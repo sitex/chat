@@ -10,6 +10,21 @@ import pytest
 
 from chatcore import llm
 
+# ── регрессионные тесты (Phase 1, коммит 0d3bf66) ─────────────────────────────
+
+
+class _FakeProc:
+    def __init__(self, rc=0, stdout=b"ok response", stderr=b""):
+        self.returncode = rc
+        self._stdout = stdout
+        self._stderr = stderr
+
+    async def communicate(self):
+        return self._stdout, self._stderr
+
+    def kill(self):
+        pass
+
 MSGS = [{"role": "user", "content": "привет"}]
 
 
@@ -79,6 +94,7 @@ def test_flatten_messages_uses_config_labels():
 async def test_claude_cli_cascades_to_ollama(monkeypatch):
     monkeypatch.setenv("LLM_BACKEND", "claude-cli")
     monkeypatch.setattr(llm, "_claude_cli", _fail)
+    monkeypatch.setattr(llm, "_cliproxy", _fail)
     monkeypatch.setattr(llm, "_ollama", _ok)
 
     out = await llm.generate("sys", MSGS)
@@ -104,3 +120,91 @@ async def test_summarize_falls_back_to_cascade(monkeypatch):
 
     result = await llm.summarize("", [{"role": "user", "content": "тест"}], "ru")
     assert result == "fallback reply"
+
+
+# ── регрессия 1: _claude_cli передаёт --model ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_claude_cli_passes_model_flag(monkeypatch):
+    """_claude_cli включает --model CLAUDE_CLI_MODEL в args subprocess."""
+    captured: list = []
+
+    async def _fake_exec(*args, **kwargs):
+        captured.extend(args)
+        return _FakeProc()
+
+    monkeypatch.setattr(llm, "CLAUDE_CLI_MODEL", "opus")
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+
+    await llm._claude_cli("sys", MSGS)
+    assert "--model" in captured
+    assert "opus" in captured
+
+
+# ── регрессия 2: _claude_cli поднимает RuntimeError при rc!=0, пустом выводе, /login ──
+
+@pytest.mark.asyncio
+async def test_claude_cli_raises_on_nonzero_rc(monkeypatch):
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=1, stdout=b"", stderr=b"auth error")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    with pytest.raises(RuntimeError, match="rc=1"):
+        await llm._claude_cli("sys", MSGS)
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_raises_on_empty_output(monkeypatch):
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    with pytest.raises(RuntimeError, match="invalid output"):
+        await llm._claude_cli("sys", MSGS)
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_raises_on_login_prompt(monkeypatch):
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=0, stdout=b"Please run /login to authenticate", stderr=b"")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    with pytest.raises(RuntimeError, match="invalid output"):
+        await llm._claude_cli("sys", MSGS)
+
+
+# ── регрессия 3: каскад claude-cli → cliproxy → ollama ────────────────────────
+
+@pytest.mark.asyncio
+async def test_claude_cli_cascades_to_cliproxy(monkeypatch):
+    """При падении _claude_cli — фолбэк на _cliproxy."""
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    monkeypatch.setattr(llm, "_claude_cli", _fail)
+    monkeypatch.setattr(llm, "_cliproxy", _ok)
+
+    out = await llm.generate("sys", MSGS)
+    assert out == "fallback reply"
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_cascades_to_ollama_when_cliproxy_also_fails(monkeypatch):
+    """При падении и _claude_cli и _cliproxy — фолбэк на _ollama."""
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    monkeypatch.setattr(llm, "_claude_cli", _fail)
+    monkeypatch.setattr(llm, "_cliproxy", _fail)
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.generate("sys", MSGS)
+    assert out == "fallback reply"
+
+
+# ── регрессия 4: guard суммаризатора ──────────────────────────────────────────
+
+def test_summary_prompt_ru_has_guard():
+    prompt = llm._summary_prompt("", [{"role": "user", "content": "привет"}], "ru")
+    assert "техническая ошибка" in prompt
+
+
+def test_summary_prompt_en_has_guard():
+    prompt = llm._summary_prompt("", [{"role": "user", "content": "hi"}], "en")
+    assert "technical glitch" in prompt

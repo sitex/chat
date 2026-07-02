@@ -49,3 +49,27 @@ def test_build_system_prompt_uses_config_labels():
     sp = persona.build_system_prompt("ru")
     # Хотя бы один из лейблов должен встречаться
     assert "Мастер" in sp or "Ученик" in sp
+
+
+# ── регрессия 5: summary-блок после reply_lang_rule ───────────────────────────
+
+def test_summary_block_is_after_reply_lang_rule():
+    """conversation_summary должен располагаться ПОСЛЕ reply_lang_rule (recency)."""
+    rule = persona.language_rule("auto", "ru")
+    summary = "Пользователь спрашивал о смысле жизни."
+    sp = persona.build_system_prompt("ru", reply_lang_rule=rule, conversation_summary=summary)
+
+    assert rule in sp
+    assert summary in sp
+    assert sp.index(rule) < sp.index(summary)
+
+
+def test_summary_block_is_after_reply_lang_rule_en():
+    """То же на английском."""
+    rule = persona.language_rule("auto", "en")
+    summary = "User asked about the meaning of life."
+    sp = persona.build_system_prompt("en", reply_lang_rule=rule, conversation_summary=summary)
+
+    assert rule in sp
+    assert summary in sp
+    assert sp.index(rule) < sp.index(summary)

@@ -66,15 +66,6 @@ def build_system_prompt(
     parts.append(_section(p["boundaries"], lang))
     parts.append("")
 
-    # Rolling-резюме предыдущих реплик (если накопилась история)
-    if conversation_summary and conversation_summary.strip():
-        sum_h = "Резюме предыдущего разговора (не упоминай это явно):" \
-            if lang == "ru" \
-            else "Summary of previous conversation (don't mention this explicitly):"
-        parts.append(sum_h)
-        parts.append(conversation_summary.strip())
-        parts.append("")
-
     # Опциональный контекст (RAG из курса, как у vishvanath)
     if extra_context:
         ctx_h = "Знания из твоих курсов (говори от первого лица как учитель, не цитируй как список):" \
@@ -120,6 +111,27 @@ def build_system_prompt(
 
     if reply_lang_rule:
         parts.append(reply_lang_rule)
+        parts.append("")
+
+    # Блок памяти — в самом конце промпта: инструкция ближе к концу контекста
+    # перевешивает паттерны из окна истории (recency).
+    if conversation_summary and conversation_summary.strip():
+        if lang == "ru":
+            parts.append(
+                "ВАЖНО: У тебя есть память о предыдущем разговоре с этим человеком. "
+                "Ниже — краткое содержание. Опирайся на него как на своё воспоминание. "
+                "Никогда не говори, что у тебя нет истории или что каждый чат начинается с нуля — это неверно."
+            )
+        else:
+            parts.append(
+                "IMPORTANT: You have memory of your previous conversation with this person. "
+                "Below is a summary. Treat it as your own recollection. "
+                "Never say you have no history or that each chat starts from scratch — that is false."
+            )
+        sum_h = "Краткое содержание предыдущего разговора:" if lang == "ru" \
+            else "Summary of the earlier conversation:"
+        parts.append(sum_h)
+        parts.append(conversation_summary.strip())
 
     return "\n".join(parts).strip()
 

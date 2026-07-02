@@ -1,4 +1,4 @@
-"""LLM-движок: cliproxy → grok → claude-cli → claude → ollama.
+"""LLM-движок: claude-cli → cliproxy → ollama (и другие бэкенды).
 
 Выбор через переменные окружения:
   LLM_BACKEND=auto|grok|cliproxy|claude-cli|claude|ollama
@@ -13,6 +13,8 @@
   GROK_BIN=~/.grok/bin/grok  (путь к Grok CLI)
   CLAUDE_CLI_BIN=~/.nvm/versions/node/v22.19.0/bin/claude  (путь к claude CLI)
   CLAUDE_CLI_TIMEOUT=45
+  CLAUDE_CLI_MODEL=sonnet     (передаётся как --model; по умолч. "sonnet")
+  CLAUDE_CONFIG_DIR=...       (если credentials не в ~/.claude/, напр. .claude-bot/)
   ANTHROPIC_API_KEY=...
   CLAUDE_MODEL=claude-sonnet-4-6
   OLLAMA_HOST=http://localhost:11434
@@ -21,6 +23,12 @@
   LLM_TIMEOUT=25
   GROK_TIMEOUT=45
   LLM_OVERALL_TIMEOUT=60
+
+ВАЖНО: cliproxy с OAuth-аккаунтом Claude Code инжектит свой system-промпт
+("You are Claude Code, Anthropic's official CLI for Claude.") поверх нашего.
+Это ломает персону — модель игнорирует инструкции о памяти. Поэтому основной
+бэкенд — claude-cli (--system-prompt полностью заменяет промпт); cliproxy —
+только фолбэк второго уровня (при падении claude-cli).
 
 Метка ассистента в «плоском» тексте для grok берётся из chatcore.config.
 """
@@ -54,6 +62,7 @@ CLAUDE_CLI_BIN = os.path.expanduser(
     os.environ.get("CLAUDE_CLI_BIN", "/home/rocky/.nvm/versions/node/v22.19.0/bin/claude")
 )
 CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
+CLAUDE_CLI_MODEL = os.environ.get("CLAUDE_CLI_MODEL", "sonnet")
 SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "sonnet")
 SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
 
@@ -105,18 +114,27 @@ async def _grok(system: str, messages: list[dict]) -> str:
 
 async def _claude_cli(system: str, messages: list[dict]) -> str:
     prompt = _flatten_messages(messages)
+    args = [CLAUDE_CLI_BIN, "-p", prompt, "--system-prompt", system]
+    if CLAUDE_CLI_MODEL:
+        args += ["--model", CLAUDE_CLI_MODEL]
     proc = await asyncio.create_subprocess_exec(
-        CLAUDE_CLI_BIN, "-p", prompt,
-        "--system-prompt", system,
+        *args,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
         proc.kill()
         raise
-    return stdout.decode().strip()
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude-cli rc={proc.returncode}: {stderr.decode(errors='replace')[:200]}"
+        )
+    out = stdout.decode(errors="replace").strip()
+    if not out or "Please run /login" in out:
+        raise RuntimeError(f"claude-cli invalid output: {out[:100]!r}")
+    return out
 
 
 async def _cliproxy(system: str, messages: list[dict]) -> str:
@@ -190,8 +208,12 @@ async def _cascade(backend: str, system: str, messages: list[dict]) -> str:
         try:
             return await _claude_cli(system, messages)
         except Exception as e:
-            log.warning("claude-cli failed (%s), falling back to ollama", e)
-            return await _ollama(system, messages)
+            log.warning("claude-cli failed (%s), falling back to cliproxy", e)
+            try:
+                return await _cliproxy(system, messages)
+            except Exception as e2:
+                log.warning("cliproxy fallback failed (%s), falling back to ollama", e2)
+                return await _ollama(system, messages)
     if backend == "claude":
         try:
             return await _claude(system, messages)
@@ -242,7 +264,11 @@ def _summary_prompt(prev_summary: str, folded: list[dict], lang: str) -> str:
         return (
             "Ты ведёшь сжатое резюме диалога. Обнови резюме, вплавив новые реплики "
             "в уже имеющееся. Сохраняй важное: факты о пользователе, его запросы и "
-            "цели, ключевые темы, договорённости. Пиши сжато, до ~200 слов, по-русски, "
+            "цели, ключевые темы, договорённости и данные обещания, значимые детали. "
+            "Не включай в резюме утверждения бота об отсутствии у него "
+            "памяти или истории разговоров — это техническая ошибка, а не "
+            "содержание разговора. "
+            "Пиши сжато, до ~200 слов, по-русски, "
             "без приветствий — только суть. Верни ТОЛЬКО текст резюме.\n\n"
             f"ТЕКУЩЕЕ РЕЗЮМЕ:\n{prev}\n\n"
             f"НОВЫЕ РЕПЛИКИ:\n{convo}\n\n"
@@ -251,7 +277,10 @@ def _summary_prompt(prev_summary: str, folded: list[dict], lang: str) -> str:
     return (
         "You maintain a running summary of a dialogue. Update the summary by folding "
         "the new turns into the existing one. Preserve: facts about the user, their "
-        "requests and goals, key topics, commitments. Be concise, up to ~200 words, "
+        "requests and goals, key topics, commitments and promises made, notable details. "
+        "Do not include any claims by the bot that it lacks memory or conversation "
+        "history — that is a technical glitch, not conversation content. "
+        "Be concise, up to ~200 words, "
         "in English, no greetings — just the essence. Return ONLY the summary text.\n\n"
         f"CURRENT SUMMARY:\n{prev}\n\n"
         f"NEW TURNS:\n{convo}\n\n"
