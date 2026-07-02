@@ -54,6 +54,8 @@ CLAUDE_CLI_BIN = os.path.expanduser(
     os.environ.get("CLAUDE_CLI_BIN", "/home/rocky/.nvm/versions/node/v22.19.0/bin/claude")
 )
 CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
+SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "sonnet")
+SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
 
 CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
 CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
@@ -229,3 +231,77 @@ async def generate(system: str, messages: list[dict]) -> str:
 
 def active_backend() -> str:
     return _resolve_backend()
+
+
+# ---------- суммаризация истории (rolling summary) ----------
+
+def _summary_prompt(prev_summary: str, folded: list[dict], lang: str) -> str:
+    convo = _flatten_messages(folded)
+    prev = prev_summary.strip() or ("(пусто)" if lang == "ru" else "(empty)")
+    if lang == "ru":
+        return (
+            "Ты ведёшь сжатое резюме диалога. Обнови резюме, вплавив новые реплики "
+            "в уже имеющееся. Сохраняй важное: факты о пользователе, его запросы и "
+            "цели, ключевые темы, договорённости. Пиши сжато, до ~200 слов, по-русски, "
+            "без приветствий — только суть. Верни ТОЛЬКО текст резюме.\n\n"
+            f"ТЕКУЩЕЕ РЕЗЮМЕ:\n{prev}\n\n"
+            f"НОВЫЕ РЕПЛИКИ:\n{convo}\n\n"
+            "ОБНОВЛЁННОЕ РЕЗЮМЕ:"
+        )
+    return (
+        "You maintain a running summary of a dialogue. Update the summary by folding "
+        "the new turns into the existing one. Preserve: facts about the user, their "
+        "requests and goals, key topics, commitments. Be concise, up to ~200 words, "
+        "in English, no greetings — just the essence. Return ONLY the summary text.\n\n"
+        f"CURRENT SUMMARY:\n{prev}\n\n"
+        f"NEW TURNS:\n{convo}\n\n"
+        "UPDATED SUMMARY:"
+    )
+
+
+async def _summary_cli(prompt: str) -> str:
+    """Суммаризация через headless Claude Code CLI (`claude -p`)."""
+    args = [CLAUDE_CLI_BIN, "-p", prompt]
+    if SUMMARY_MODEL:
+        args += ["--model", SUMMARY_MODEL]
+    proc = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(), timeout=SUMMARY_TIMEOUT
+        )
+    except (asyncio.TimeoutError, asyncio.CancelledError):
+        proc.kill()
+        raise
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"claude -p rc={proc.returncode}: {stderr.decode(errors='replace')[:200]}"
+        )
+    out = stdout.decode(errors="replace").strip()
+    if not out:
+        raise RuntimeError("claude -p returned empty output")
+    return out
+
+
+async def summarize(prev_summary: str, folded: list[dict], lang: str = "ru") -> str:
+    """Свернуть старые реплики в обновлённое резюме.
+
+    Предпочитает `claude -p` (бесплатно по Max-подписке); при ошибке —
+    фолбэк на активный LLM-каскад.
+    """
+    prompt = _summary_prompt(prev_summary, folded, lang)
+    try:
+        return await _summary_cli(prompt)
+    except Exception as e:
+        log.warning("summarize via claude-cli failed (%s), falling back to cascade", e)
+        system = (
+            "Ты — ассистент, который сжимает диалог в краткое точное резюме."
+            if lang == "ru"
+            else "You compress a dialogue into a concise, accurate summary."
+        )
+        return await _cascade(
+            _resolve_backend(), system, [{"role": "user", "content": prompt}]
+        )

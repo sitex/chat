@@ -31,6 +31,7 @@ def build_system_prompt(
     lang: str,
     reply_lang_rule: str | None = None,
     extra_context: str | None = None,
+    conversation_summary: str | None = None,
 ) -> str:
     """Собрать system prompt из persona.json.
 
@@ -38,6 +39,7 @@ def build_system_prompt(
         lang: язык промпта ('ru'|'en').
         reply_lang_rule: инструкция о языке ответа (из language_rule()).
         extra_context: дополнительный контекст (напр. RAG-факты из курса).
+        conversation_summary: rolling-резюме предыдущих реплик диалога.
     """
     p = data_store.load("persona")
     parts: list[str] = []
@@ -63,6 +65,15 @@ def build_system_prompt(
     parts.append(_section(p["teacher_mode"], lang))
     parts.append(_section(p["boundaries"], lang))
     parts.append("")
+
+    # Rolling-резюме предыдущих реплик (если накопилась история)
+    if conversation_summary and conversation_summary.strip():
+        sum_h = "Резюме предыдущего разговора (не упоминай это явно):" \
+            if lang == "ru" \
+            else "Summary of previous conversation (don't mention this explicitly):"
+        parts.append(sum_h)
+        parts.append(conversation_summary.strip())
+        parts.append("")
 
     # Опциональный контекст (RAG из курса, как у vishvanath)
     if extra_context:

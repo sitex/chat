@@ -73,3 +73,34 @@ def test_flatten_messages_uses_config_labels():
     flat = llm._flatten_messages(msgs)
     assert "Гость: Привет" in flat
     assert "Персона: Добрый день" in flat
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_cascades_to_ollama(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    monkeypatch.setattr(llm, "_claude_cli", _fail)
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.generate("sys", MSGS)
+    assert out == "fallback reply"
+
+
+@pytest.mark.asyncio
+async def test_grok_cascades_to_claude_cli(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "grok")
+    monkeypatch.setattr(llm, "_grok", _fail)
+    monkeypatch.setattr(llm, "_claude_cli", _ok)
+
+    out = await llm.generate("sys", MSGS)
+    assert out == "fallback reply"
+
+
+@pytest.mark.asyncio
+async def test_summarize_falls_back_to_cascade(monkeypatch):
+    """summarize() при падении _summary_cli фолбэчит на LLM-каскад."""
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    monkeypatch.setattr(llm, "_summary_cli", _fail)
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    result = await llm.summarize("", [{"role": "user", "content": "тест"}], "ru")
+    assert result == "fallback reply"

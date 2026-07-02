@@ -14,6 +14,7 @@
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 # --- рантайм-состояние (модуль-синглтон) ---
@@ -61,6 +62,9 @@ def get_data_dir() -> Path:
 def get_db_path() -> Path:
     if _db_path is not None:
         return _db_path
+    env_path = os.environ.get("DB_PATH")
+    if env_path:
+        return Path(env_path).resolve()
     return Path("bot.db").resolve()
 
 

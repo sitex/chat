@@ -39,6 +39,14 @@ def _db() -> sqlite3.Connection:
         _conn.execute(
             "CREATE INDEX IF NOT EXISTS idx_messages_chat ON messages(chat_id, id)"
         )
+        _conn.execute(
+            """CREATE TABLE IF NOT EXISTS summaries (
+                   chat_id INTEGER PRIMARY KEY,
+                   summary TEXT NOT NULL DEFAULT '',
+                   covered_up_to_id INTEGER NOT NULL DEFAULT 0,
+                   updated_ts REAL NOT NULL DEFAULT 0
+               )"""
+        )
         # Обобщённый seen-state: namespace позволяет хранить несколько
         # независимых «уже показанных» множеств на один чат.
         # Примеры namespace: 'riddles', 'tricks', 'quotes'.
@@ -85,6 +93,53 @@ def history(chat_id: int, limit: int = 20) -> list[dict]:
 def reset(chat_id: int) -> None:
     db = _db()
     db.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    db.execute("DELETE FROM summaries WHERE chat_id=?", (chat_id,))
+    db.commit()
+
+
+def history_after(chat_id: int, after_id: int, limit: int = 20) -> list[dict]:
+    """Последние `limit` сообщений с id > after_id в хронологическом порядке."""
+    db = _db()
+    rows = db.execute(
+        "SELECT role, content FROM messages WHERE chat_id=? AND id>? "
+        "ORDER BY id DESC LIMIT ?",
+        (chat_id, after_id, limit),
+    ).fetchall()
+    return [{"role": r, "content": c} for r, c in reversed(rows)]
+
+
+def pending_to_summarize(chat_id: int, after_id: int, keep: int) -> list[dict]:
+    """Сообщения-кандидаты на сворачивание: всё новее after_id, КРОМЕ последних
+    `keep` дословных. Возвращает [{'id','role','content'}] в хрон. порядке."""
+    db = _db()
+    rows = db.execute(
+        "SELECT id, role, content FROM messages WHERE chat_id=? AND id>? "
+        "ORDER BY id ASC",
+        (chat_id, after_id),
+    ).fetchall()
+    fold = rows[:-keep] if keep > 0 else rows
+    return [{"id": i, "role": r, "content": c} for i, r, c in fold]
+
+
+def get_summary(chat_id: int) -> tuple[str, int]:
+    """Текущее резюме диалога и id последнего свёрнутого сообщения."""
+    db = _db()
+    row = db.execute(
+        "SELECT summary, covered_up_to_id FROM summaries WHERE chat_id=?",
+        (chat_id,),
+    ).fetchone()
+    return (row[0], row[1]) if row else ("", 0)
+
+
+def set_summary(chat_id: int, summary: str, covered_up_to_id: int) -> None:
+    db = _db()
+    db.execute(
+        "INSERT INTO summaries(chat_id, summary, covered_up_to_id, updated_ts) "
+        "VALUES (?,?,?,?) ON CONFLICT(chat_id) DO UPDATE SET "
+        "summary=excluded.summary, covered_up_to_id=excluded.covered_up_to_id, "
+        "updated_ts=excluded.updated_ts",
+        (chat_id, summary, covered_up_to_id, time.time()),
+    )
     db.commit()
 
 
