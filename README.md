@@ -47,7 +47,7 @@ chatcore/
 | **Эдвард Манникс** | [chat-mannix](../chat-mannix) | [@mannix_clearing_bot](https://t.me/mannix_clearing_bot) | TTS (OmniVoice), web-фронтенд FastAPI |
 | **Lee Jacobs** | [chat-jacobs](../chat-jacobs) | [@unwritten_system_bot](https://t.me/unwritten_system_bot) | Концепты, практики, диагностика OS, на chatcore |
 | **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json`, на chatcore |
-| **David Key** | [chat-davidkey](../chat-davidkey) | *(хэндл уточнить 2026-07-03)* | RAG по NLP + гипнотерапии, на chatcore |
+| **David Key** | [chat-davidkey](../chat-davidkey) | [@david_key_bot](https://t.me/david_key_bot) | RAG по NLP + гипнотерапии, на chatcore |
 | **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | [@davidkey_quiz_bot](https://t.me/davidkey_quiz_bot) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
 | **Мария** | [chat-socialself](../chat-socialself) | [@maria_socialself_bot](https://t.me/maria_socialself_bot) | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
 | **Ачарья Дас** | [chat-acharya-das](../chat-acharya-das) | [@acharya_das_gita_bot](https://t.me/acharya_das_gita_bot) | Ведический учитель, Бхагавад-Гита, RAG по 754 фактам |
