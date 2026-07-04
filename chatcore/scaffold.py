@@ -46,6 +46,7 @@ from telegram.constants import ChatAction
 from telegram.ext import (
     Application,
     ApplicationBuilder,
+    BaseHandler,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
@@ -206,6 +207,7 @@ class BotScaffold:
         study_paths: list[str] | None,
         bot_commands_menu: bool,
         extra_bot_commands: list[tuple[str, str]] | None,
+        extra_handlers: list[BaseHandler] | None = None,
     ) -> None:
         self.bot_name = bot_name
         self.start_text_ru = start_text_ru
@@ -217,6 +219,7 @@ class BotScaffold:
         self.commands = commands
         self.bot_commands_menu = bot_commands_menu
         self.extra_bot_commands = extra_bot_commands or []
+        self.extra_handlers = extra_handlers or []
 
         # Конфигурируем retrieval если заданы пути
         if study_paths:
@@ -402,6 +405,8 @@ class BotScaffold:
             app.add_handler(CommandHandler(cmd.command, handler))
 
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.on_message))
+        for h in self.extra_handlers:
+            app.add_handler(h)
         app.add_handler(CallbackQueryHandler(self.on_callback))
         app.add_error_handler(self.on_error)
         return app
@@ -453,6 +458,7 @@ def run(
     study_paths: list[str] | None = None,
     bot_commands_menu: bool = True,
     extra_bot_commands: list[tuple[str, str]] | None = None,
+    extra_handlers: list[BaseHandler] | None = None,
 ) -> None:
     """Запустить бота. Загружает .env, строит приложение, запускает polling.
 
@@ -465,6 +471,7 @@ def run(
         study_paths:        пути к study-курсам для RAG (опционально).
         bot_commands_menu:  ставить ли меню команд через set_my_commands.
         extra_bot_commands: дополнительные пары (command, description) для меню.
+        extra_handlers:     PTB-хендлеры, регистрируются до catch-all CallbackQueryHandler.
     """
     load_dotenv()
     logging.basicConfig(
@@ -483,6 +490,7 @@ def run(
         study_paths=study_paths,
         bot_commands_menu=bot_commands_menu,
         extra_bot_commands=extra_bot_commands,
+        extra_handlers=extra_handlers,
     )
     app = scaffold_obj.build_app()
     log.info("%s bot is running…", bot_name)
