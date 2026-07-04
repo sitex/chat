@@ -48,7 +48,8 @@ chatcore/
 | **Lee Jacobs** | [chat-jacobs](../chat-jacobs) | [@unwritten_system_bot](https://t.me/unwritten_system_bot) | Концепты, практики, диагностика OS, на chatcore |
 | **Шри Вишванатх** | [chat-vishvanath](../chat-vishvanath) | [@sri_vishwanath_bot](https://t.me/sri_vishwanath_bot) | RAG по `study-vishvanath/facts.json`, на chatcore |
 | **David Key** | [chat-davidkey](../chat-davidkey) | [@david_key_bot](https://t.me/david_key_bot) | RAG по NLP + гипнотерапии, на chatcore |
-| **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | [@davidkey_quiz_bot](https://t.me/davidkey_quiz_bot) | Quiz/геймификация (XP/уровни/бейджи), без LLM |
+| **Гид по IFS** | [chat-ifs](../chat-ifs) | [@ifs_course_bot](https://t.me/ifs_course_bot) | Tier 2: гид по курсу «The Spirituality of IFS» (Шварц), RAG по 246 ��актам |
+| **David Key Quiz** | [study-davidkey/game](../study-davidkey/game) | ~~[@davidkey_quiz_bot](https://t.me/davidkey_quiz_bot)~~ | ~~Quiz/геймификация (XP/уровни/бейджи), без LLM~~ — удалён |
 | **Мария** | [chat-socialself](../chat-socialself) | [@maria_socialself_bot](https://t.me/maria_socialself_bot) | Психолог по соцнавыкам, Fast Friend Protocol, RAG |
 | **Ачарья Дас** | [chat-acharya-das](../chat-acharya-das) | [@acharya_das_gita_bot](https://t.me/acharya_das_gita_bot) | Ведический учитель, Бхагавад-Гита, RAG по 754 фактам |
 | **Marni Kinrys** | [chat-marni](../chat-marni) | [@marni_kinrys_bot](https://t.me/marni_kinrys_bot) | Wing Girl dating coach, RAG по 238 фактам |
@@ -77,7 +78,8 @@ chatcore/
 - [x] `chat-sigma` — Sigma Society, self-improvement
 
 **Tier 2 — гид по учению:**
-- `chat-gita`, `chat-yoga-vasistha`, `chat-vedanta`, `chat-ifs`, `chat-smysl`
+- [x] `chat-ifs` — [@ifs_course_bot](https://t.me/ifs_course_bot) — гид по IFS (The Spirituality of IFS, Ричард Шварц)
+- `chat-gita`, `chat-yoga-vasistha`, `chat-vedanta`, `chat-smysl`
 
 **Уже имеют бота → миграция:**
 - `study-socialself` — quiz/гейм (8 game-*.json, аналог davidkey)
