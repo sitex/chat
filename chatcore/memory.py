@@ -20,6 +20,12 @@ def _db() -> sqlite3.Connection:
         db_path = config.get_db_path()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         _conn = sqlite3.connect(str(db_path), check_same_thread=False)
+        try:
+            _conn.execute("PRAGMA journal_mode=WAL")
+            _conn.execute("PRAGMA synchronous=NORMAL")
+        except sqlite3.OperationalError:
+            pass  # сетевые ФС не поддерживают WAL
+        _conn.execute("PRAGMA busy_timeout=5000")
         _conn.execute(
             """CREATE TABLE IF NOT EXISTS messages (
                    id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,3 +215,16 @@ def set_lang_mode(chat_id: int, mode: str) -> None:
         (chat_id, mode),
     )
     db.commit()
+
+
+def close() -> None:
+    """Закрыть соединение с БД и сбросить кэш.
+
+    Порядок: close() → config.setup(db_path=...) → первый вызов _db() откроет
+    новую БД. config.setup() сам close() НЕ вызывает — это предотвращает
+    циклический импорт и позволяет управлять порядком явно.
+    """
+    global _conn
+    if _conn is not None:
+        _conn.close()
+        _conn = None

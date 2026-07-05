@@ -66,11 +66,9 @@ def setup_chatcore_config(tmp_path):
     data_store._cache.clear()
 
     # Сбрасываем соединение с БД
-    memory._conn = None
+    memory.close()
 
     yield tmp_path
 
     # Закрыть соединение после теста
-    if memory._conn is not None:
-        memory._conn.close()
-        memory._conn = None
+    memory.close()

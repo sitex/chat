@@ -31,6 +31,13 @@
 только фолбэк второго уровня (при падении claude-cli).
 
 Метка ассистента в «плоском» тексте для grok берётся из chatcore.config.
+
+Схема дедлайнов каскада:
+  generate() вычисляет deadline = now + LLM_OVERALL_TIMEOUT и передаёт его
+  в _cascade(). Перед каждым бэкендом _attempt() проверяет оставшийся
+  бюджет; если он меньше _MIN_ATTEMPT_BUDGET — бэкенд пропускается
+  с asyncio.TimeoutError("budget exhausted"). Внешний wait_for(
+  LLM_OVERALL_TIMEOUT+1) — страховка от зависания без исключений.
 """
 from __future__ import annotations
 
@@ -77,6 +84,8 @@ SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
 CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
 CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
 CLIPROXY_MODEL = os.environ.get("CLIPROXY_MODEL", "claude-sonnet-4-6")
+
+_MIN_ATTEMPT_BUDGET = 3.0
 
 
 def _resolve_backend() -> str:
@@ -148,32 +157,32 @@ async def _claude_cli(system: str, messages: list[dict]) -> str:
 async def _cliproxy(system: str, messages: list[dict]) -> str:
     from anthropic import AsyncAnthropic
 
-    client = AsyncAnthropic(base_url=CLIPROXY_BASE_URL, api_key=CLIPROXY_API_KEY)
-    resp = await asyncio.wait_for(
-        client.messages.create(
-            model=CLIPROXY_MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            messages=messages,
-        ),
-        timeout=LLM_TIMEOUT,
-    )
+    async with AsyncAnthropic(base_url=CLIPROXY_BASE_URL, api_key=CLIPROXY_API_KEY) as client:
+        resp = await asyncio.wait_for(
+            client.messages.create(
+                model=CLIPROXY_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system,
+                messages=messages,
+            ),
+            timeout=LLM_TIMEOUT,
+        )
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
 async def _claude(system: str, messages: list[dict]) -> str:
     from anthropic import AsyncAnthropic
 
-    client = AsyncAnthropic()
-    resp = await asyncio.wait_for(
-        client.messages.create(
-            model=CLAUDE_MODEL,
-            max_tokens=MAX_TOKENS,
-            system=system,
-            messages=messages,
-        ),
-        timeout=LLM_TIMEOUT,
-    )
+    async with AsyncAnthropic() as client:
+        resp = await asyncio.wait_for(
+            client.messages.create(
+                model=CLAUDE_MODEL,
+                max_tokens=MAX_TOKENS,
+                system=system,
+                messages=messages,
+            ),
+            timeout=LLM_TIMEOUT,
+        )
     return "".join(b.text for b in resp.content if b.type == "text").strip()
 
 
@@ -191,44 +200,82 @@ async def _ollama(system: str, messages: list[dict]) -> str:
         return _THINK_RE.sub("", content).strip()
 
 
-async def _cascade(backend: str, system: str, messages: list[dict]) -> str:
+async def _attempt(
+    fn,
+    system: str,
+    messages: list[dict],
+    deadline: float | None,
+) -> str:
+    """Вызвать fn с учётом оставшегося бюджета.
+
+    Если deadline is None — вызов без ограничений.
+    Если оставшийся бюджет < _MIN_ATTEMPT_BUDGET — сразу asyncio.TimeoutError.
+    Иначе — asyncio.wait_for(fn, remaining).
+    """
+    if deadline is None:
+        return await fn(system, messages)
+    remaining = deadline - time.monotonic()
+    if remaining < _MIN_ATTEMPT_BUDGET:
+        raise asyncio.TimeoutError(f"llm budget exhausted before {fn.__name__}")
+    return await asyncio.wait_for(fn(system, messages), timeout=remaining)
+
+
+async def _cascade(backend: str, system: str, messages: list[dict], deadline: float | None = None) -> str:
     if backend == "cliproxy":
         try:
-            return await _cliproxy(system, messages)
+            return await _attempt(_cliproxy, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
             log.warning("cliproxy failed (%s), falling back to grok", e)
-            try:
-                return await _grok(system, messages)
-            except Exception as e2:
-                log.warning("grok fallback failed (%s), falling back to ollama", e2)
-                return await _ollama(system, messages)
+        try:
+            return await _attempt(_grok, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
+        except Exception as e:
+            log.warning("grok fallback failed (%s), falling back to ollama", e)
+        return await _attempt(_ollama, system, messages, deadline)
+
     if backend == "grok":
         try:
-            return await _grok(system, messages)
+            return await _attempt(_grok, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
             log.warning("grok failed (%s), falling back to claude-cli", e)
-            try:
-                return await _claude_cli(system, messages)
-            except Exception as e2:
-                log.warning("claude-cli fallback failed (%s), falling back to ollama", e2)
-                return await _ollama(system, messages)
+        try:
+            return await _attempt(_claude_cli, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
+        except Exception as e:
+            log.warning("claude-cli fallback failed (%s), falling back to ollama", e)
+        return await _attempt(_ollama, system, messages, deadline)
+
     if backend == "claude-cli":
         try:
-            return await _claude_cli(system, messages)
+            return await _attempt(_claude_cli, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
             log.warning("claude-cli failed (%s), falling back to cliproxy", e)
-            try:
-                return await _cliproxy(system, messages)
-            except Exception as e2:
-                log.warning("cliproxy fallback failed (%s), falling back to ollama", e2)
-                return await _ollama(system, messages)
+        try:
+            return await _attempt(_cliproxy, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
+        except Exception as e:
+            log.warning("cliproxy fallback failed (%s), falling back to ollama", e)
+        return await _attempt(_ollama, system, messages, deadline)
+
     if backend == "claude":
         try:
-            return await _claude(system, messages)
+            return await _attempt(_claude, system, messages, deadline)
+        except asyncio.TimeoutError:
+            raise
         except Exception as e:
             log.warning("claude failed (%s), falling back to ollama", e)
-            return await _ollama(system, messages)
-    return await _ollama(system, messages)
+        return await _attempt(_ollama, system, messages, deadline)
+
+    return await _attempt(_ollama, system, messages, deadline)
 
 
 async def generate(system: str, messages: list[dict]) -> str:
@@ -241,9 +288,10 @@ async def generate(system: str, messages: list[dict]) -> str:
     """
     backend = _resolve_backend()
     t0 = time.monotonic()
+    deadline = t0 + LLM_OVERALL_TIMEOUT
     try:
         result = await asyncio.wait_for(
-            _cascade(backend, system, messages), timeout=LLM_OVERALL_TIMEOUT
+            _cascade(backend, system, messages, deadline), timeout=LLM_OVERALL_TIMEOUT + 1
         )
     except asyncio.TimeoutError:
         log.error("llm generate timed out after %ss (backend=%s)", LLM_OVERALL_TIMEOUT, backend)

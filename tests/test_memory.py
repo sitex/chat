@@ -134,3 +134,36 @@ def test_pending_to_summarize():
     assert len(pending) == 7  # 10 - 3 дословных
     assert "id" in pending[0]
     assert pending[0]["role"] == "user"
+
+
+# ---------- Phase 2.3: WAL + close/reopen ----------
+
+def test_wal_mode():
+    """После первого открытия БД journal_mode должен быть WAL."""
+    db = memory._db()
+    row = db.execute("PRAGMA journal_mode").fetchone()
+    # WAL может быть недоступен на сетевых ФС, но в тестах (tmp_path) — всегда WAL
+    assert row[0] == "wal"
+
+
+def test_close_and_reopen(tmp_path):
+    """close() → setup(новая БД) → история пуста; возврат к старой → история на месте."""
+    from chatcore import config
+
+    db1 = tmp_path / "db1.db"
+    db2 = tmp_path / "db2.db"
+
+    config.setup(db_path=db1)
+    memory.close()
+    memory.add(CHAT, "user", "в первой БД")
+    assert len(memory.history(CHAT)) == 1
+
+    memory.close()
+    config.setup(db_path=db2)
+    assert memory.history(CHAT) == []
+
+    memory.close()
+    config.setup(db_path=db1)
+    hist = memory.history(CHAT)
+    assert len(hist) == 1
+    assert "первой БД" in hist[0]["content"]

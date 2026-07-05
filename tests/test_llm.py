@@ -286,3 +286,32 @@ async def test_summary_cli_timeout_calls_wait(monkeypatch):
 
     assert proc.killed
     assert proc.wait_called
+
+
+# ── Phase 2.2: deadline-aware бюджет каскада ──────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_budget_exhausted_before_fallback(monkeypatch):
+    """Primary съедает бюджет → fallback не стартует, TimeoutError упоминает budget."""
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    monkeypatch.setattr(llm, "LLM_OVERALL_TIMEOUT", 0.5)
+    monkeypatch.setattr(llm, "_MIN_ATTEMPT_BUDGET", 0.3)
+
+    async def _slow_fail(*_a, **_k):
+        await asyncio.sleep(0.3)
+        raise RuntimeError("primary failed")
+
+    fallback_called = [False]
+
+    async def _fallback(*_a, **_k):
+        fallback_called[0] = True
+        return "fallback reply"
+
+    monkeypatch.setattr(llm, "_claude_cli", _slow_fail)
+    monkeypatch.setattr(llm, "_cliproxy", _fallback)
+    monkeypatch.setattr(llm, "_ollama", _fallback)
+
+    with pytest.raises(asyncio.TimeoutError, match="budget"):
+        await llm.generate("sys", MSGS)
+
+    assert not fallback_called[0]
