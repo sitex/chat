@@ -36,7 +36,7 @@ def _fake_update(text: str, lang_code: str = "ru", chat_id: int = 987654321):
     message = SimpleNamespace(text=text, reply_text=reply)
     update = SimpleNamespace(
         effective_chat=SimpleNamespace(id=chat_id),
-        effective_user=SimpleNamespace(language_code=lang_code),
+        effective_user=SimpleNamespace(id=chat_id, language_code=lang_code),
         message=message,
     )
     ctx = SimpleNamespace(bot=SimpleNamespace(send_chat_action=chat_action))
@@ -319,3 +319,107 @@ def test_build_app_extra_handlers_order(monkeypatch):
 
     assert msg_idx < extra_idx, "extra_handler должен быть после on_message"
     assert extra_idx < cq_idx, "extra_handler должен быть до catch-all CallbackQueryHandler"
+
+
+# ── Phase 3: rate-limit и admin-хендлеры ──────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_on_message_rate_limited(monkeypatch):
+    """LLM вызывается ровно 2 раза, 3-е сообщение получает предупреждение."""
+    call_count = [0]
+
+    async def _gen(*_a, **_k):
+        call_count[0] += 1
+        return "ответ"
+
+    monkeypatch.setattr(llm, "generate", _gen)
+
+    bot = _make_scaffold(rate_limit=2)
+    update1, ctx1, reply1 = _fake_update("msg1")
+    update2, ctx2, reply2 = _fake_update("msg2")
+    update3, ctx3, reply3 = _fake_update("msg3")
+
+    await bot.on_message(update1, ctx1)
+    await bot.on_message(update2, ctx2)
+    await bot.on_message(update3, ctx3)
+
+    assert call_count[0] == 2
+    assert reply3.await_count == 1
+    text = reply3.await_args.args[0]
+    assert "подождите" in text.lower() or "wait" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_on_message_rate_limit_warns_once(monkeypatch):
+    """При 4 сообщениях с лимитом 2: ровно одно предупреждение (3-е), 4-е молчит."""
+    async def _gen(*_a, **_k):
+        return "ответ"
+
+    monkeypatch.setattr(llm, "generate", _gen)
+
+    bot = _make_scaffold(rate_limit=2)
+    replies = []
+    for i in range(4):
+        update, ctx, reply = _fake_update(f"msg{i}")
+        await bot.on_message(update, ctx)
+        replies.append(reply)
+
+    # msg1, msg2 — LLM; msg3 — предупреждение; msg4 — молчание
+    assert replies[2].await_count == 1   # предупреждение
+    assert replies[3].await_count == 0   # молчание
+
+
+@pytest.mark.asyncio
+async def test_on_message_rate_limit_disabled(monkeypatch):
+    """rate_limit=0 отключает лимит — все 15 сообщений доходят до LLM."""
+    call_count = [0]
+
+    async def _gen(*_a, **_k):
+        call_count[0] += 1
+        return "ответ"
+
+    monkeypatch.setattr(llm, "generate", _gen)
+
+    bot = _make_scaffold(rate_limit=0)
+    for i in range(15):
+        update, ctx, _ = _fake_update(f"msg{i}")
+        await bot.on_message(update, ctx)
+
+    assert call_count[0] == 15
+
+
+def test_build_app_registers_admin_handlers(monkeypatch):
+    """admin_status/admin_stats/admin_reset регистрируются до MessageHandler."""
+    from unittest.mock import MagicMock, patch
+
+    from telegram.ext import CommandHandler as CH
+    from telegram.ext import MessageHandler as MH
+
+    monkeypatch.setenv("BOT_TOKEN", "fake:token12345")
+
+    handlers_registered = []
+    fake_app = MagicMock()
+    fake_app.add_handler.side_effect = lambda h: handlers_registered.append(h)
+
+    with patch("chatcore.scaffold.ApplicationBuilder") as MockBuilder:
+        (
+            MockBuilder.return_value
+            .token.return_value
+            .post_init.return_value
+            .build.return_value
+        ) = fake_app
+
+        bot = _make_scaffold()
+        bot.build_app()
+
+    msg_idx = next(i for i, h in enumerate(handlers_registered) if isinstance(h, MH))
+    admin_commands = {"admin_status", "admin_stats", "admin_reset"}
+    for h in handlers_registered:
+        if isinstance(h, CH):
+            cmds = set(h.commands)
+            if cmds & admin_commands:
+                idx = handlers_registered.index(h)
+                assert idx < msg_idx, f"admin handler {cmds} должен быть до MessageHandler"
+                admin_commands -= cmds
+
+    assert not admin_commands, f"Не найдены хендлеры: {admin_commands}"

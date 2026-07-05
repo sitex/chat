@@ -54,7 +54,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import data_store, llm, memory, persona, retrieval
+from . import admin, data_store, llm, memory, persona, ratelimit, retrieval
 
 log = logging.getLogger("chatcore.scaffold")
 
@@ -209,6 +209,8 @@ class BotScaffold:
         bot_commands_menu: bool,
         extra_bot_commands: list[tuple[str, str]] | None,
         extra_handlers: list[BaseHandler] | None = None,
+        rate_limit: int = 10,
+        rate_period: float = 60.0,
     ) -> None:
         self.bot_name = bot_name
         self.start_text_ru = start_text_ru
@@ -221,6 +223,7 @@ class BotScaffold:
         self.bot_commands_menu = bot_commands_menu
         self.extra_bot_commands = extra_bot_commands or []
         self.extra_handlers = extra_handlers or []
+        self._limiter = ratelimit.RateLimiter(rate_limit, rate_period)
 
         # Конфигурируем retrieval если заданы пути
         if study_paths:
@@ -330,6 +333,17 @@ class BotScaffold:
 
     async def on_message(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         chat_id = update.effective_chat.id
+        user = update.effective_user
+        user_id = user.id if user else chat_id
+        if not self._limiter.is_allowed(user_id):
+            if self._limiter.should_warn(user_id):
+                lang = self._ui_lang(update, chat_id)
+                await update.message.reply_text(
+                    "Слишком много сообщений — подождите минуту 🍵"
+                    if lang == "ru"
+                    else "Too many messages — please wait a minute 🍵"
+                )
+            return
         user_text = update.message.text or ""
 
         mode = memory.get_lang_mode(chat_id)
@@ -421,6 +435,8 @@ class BotScaffold:
         app.add_handler(CommandHandler("help", self.cmd_help))
         app.add_handler(CommandHandler("reset", self.cmd_reset))
         app.add_handler(CommandHandler("lang", self.cmd_lang))
+        for h in admin.make_admin_handlers(self):
+            app.add_handler(h)
 
         for cmd in self.commands:
             handler = self._make_content_handler(cmd)
@@ -481,6 +497,8 @@ def run(
     bot_commands_menu: bool = True,
     extra_bot_commands: list[tuple[str, str]] | None = None,
     extra_handlers: list[BaseHandler] | None = None,
+    rate_limit: int = 10,
+    rate_period: float = 60.0,
 ) -> None:
     """Запустить бота. Загружает .env, строит приложение, запускает polling.
 
@@ -494,6 +512,8 @@ def run(
         bot_commands_menu:  ставить ли меню команд через set_my_commands.
         extra_bot_commands: дополнительные пары (command, description) для меню.
         extra_handlers:     PTB-хендлеры, регистрируются до catch-all CallbackQueryHandler.
+        rate_limit:         макс. сообщений на пользователя за rate_period (0 — отключить).
+        rate_period:        длина скользящего окна в секундах (по умолчанию 60).
     """
     load_dotenv()
     llm.reload_env()
@@ -515,6 +535,8 @@ def run(
         bot_commands_menu=bot_commands_menu,
         extra_bot_commands=extra_bot_commands,
         extra_handlers=extra_handlers,
+        rate_limit=rate_limit,
+        rate_period=rate_period,
     )
     app = scaffold_obj.build_app()
     log.info("%s bot is running…", bot_name)

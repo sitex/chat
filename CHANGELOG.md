@@ -2,6 +2,12 @@
 
 ## [0.1.3] — 2026-07-05
 
+### Added
+- `chatcore/ratelimit.py` — sliding-window rate-limit для `on_message` (10 сообщ./60 сек на пользователя, `rate_limit=0` отключает). ⚠️ Новое поведение по умолчанию — существующие боты получают лимит 10/60 автоматически (#10).
+- `chatcore/admin.py` — `/admin_status`, `/admin_stats`, `/admin_reset <chat_id>` по `ADMIN_IDS` из env; молчаливый игнор не-админов; не добавляется в меню команд (#10).
+- `memory.count_chats()`, `memory.top_chats(since_ts)` — статистика активности для admin-команд.
+- Параметры `rate_limit` (int, по умолч. 10) и `rate_period` (float, по умолч. 60.0) в `scaffold.run()` и `BotScaffold.__init__()`.
+
 ### Changed (Breaking)
 - **`llm.py`**: backend `claude-cli` теперь работает в **строгом режиме** — фолбэк на `cliproxy` и `ollama` убран. При ошибке `claude -p` исключение поднимается наверх; бот показывает fallback-текст вместо ответа со сломанной персоной. Причина: cliproxy инжектирует промпт «You are Claude Code…» поверх персонажа.
 

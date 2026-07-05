@@ -127,6 +127,26 @@ def pending_to_summarize(chat_id: int, after_id: int, keep: int) -> list[dict]:
     return [{"id": i, "role": r, "content": c} for i, r, c in fold]
 
 
+# ---------- статистика (для admin-команд) ----------
+
+def count_chats() -> int:
+    """Число уникальных chat_id в messages."""
+    db = _db()
+    row = db.execute("SELECT COUNT(DISTINCT chat_id) FROM messages").fetchone()
+    return int(row[0])
+
+
+def top_chats(since_ts: float, limit: int = 10) -> list[tuple[int, int]]:
+    """Топ chat_id по числу user-сообщений с момента since_ts: [(chat_id, count)]."""
+    db = _db()
+    rows = db.execute(
+        "SELECT chat_id, COUNT(*) AS c FROM messages "
+        "WHERE role='user' AND ts >= ? GROUP BY chat_id ORDER BY c DESC LIMIT ?",
+        (since_ts, limit),
+    ).fetchall()
+    return [(int(r[0]), int(r[1])) for r in rows]
+
+
 def get_summary(chat_id: int) -> tuple[str, int]:
     """Текущее резюме диалога и id последнего свёрнутого сообщения."""
     db = _db()

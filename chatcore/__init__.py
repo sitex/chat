@@ -23,6 +23,6 @@
 
 Подробнее: docs/CREATING-A-BOT.md
 """
-from . import config, data_store, llm, memory, persona, retrieval, scaffold
+from . import admin, config, data_store, llm, memory, persona, ratelimit, retrieval, scaffold
 
-__all__ = ["config", "data_store", "llm", "memory", "persona", "retrieval", "scaffold"]
+__all__ = ["admin", "config", "data_store", "llm", "memory", "persona", "ratelimit", "retrieval", "scaffold"]
