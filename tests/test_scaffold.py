@@ -145,3 +145,141 @@ def test_auto_format_riddle_english_only():
     out = scaffold._auto_format(item, "en")
     assert "Загадка:" not in out
     assert "Riddle:" in out
+
+
+# ── Phase 1.3: пустой / отсутствующий датасет ─────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_handle_content_cmd_empty_dataset(tmp_path):
+    """Пустой датасет → вежливое сообщение, без исключения."""
+    from chatcore import data_store as ds
+
+    # conftest уже настроил config с tmp_path/data; пишем пустой файл туда
+    data_dir = tmp_path / "data"
+    (data_dir / "empty.json").write_text("[]", encoding="utf-8")
+    ds._cache.clear()
+
+    cmd = ContentCommand("q", "empty", "cb_q", "Q", "Q")
+    bot = _make_scaffold(commands=[cmd])
+    replies = []
+
+    async def reply_fn(text, parse_mode=None, reply_markup=None):
+        replies.append(text)
+
+    await bot._handle_content_cmd(cmd, chat_id=1, lang="ru", reply_fn=reply_fn)
+    assert len(replies) == 1
+    assert "нечего" in replies[0] or "check back" in replies[0]
+
+
+@pytest.mark.asyncio
+async def test_handle_content_cmd_missing_dataset(tmp_path):
+    """Отсутствующий файл датасета → вежливое сообщение, без исключения."""
+    from chatcore import data_store as ds
+    ds._cache.clear()
+
+    cmd = ContentCommand("q", "nonexistent", "cb_q", "Q", "Q")
+    bot = _make_scaffold(commands=[cmd])
+    replies = []
+
+    async def reply_fn(text, parse_mode=None, reply_markup=None):
+        replies.append(text)
+
+    await bot._handle_content_cmd(cmd, chat_id=1, lang="en", reply_fn=reply_fn)
+    assert len(replies) == 1
+    assert "check back" in replies[0]
+
+
+# ── Phase 1.4: on_error локализован ───────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_on_error_ru(monkeypatch):
+    """on_error отвечает на русском для русскоязычного пользователя."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    # Патчим scaffold.Update чтобы isinstance-проверка прошла с SimpleNamespace
+    monkeypatch.setattr(scaffold, "Update", SimpleNamespace)
+
+    reply = AsyncMock()
+    message = SimpleNamespace(reply_text=reply)
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=111),
+        effective_user=SimpleNamespace(language_code="ru"),
+    )
+    ctx = SimpleNamespace(error=RuntimeError("boom"))
+
+    bot = _make_scaffold()
+    await bot.on_error(update, ctx)
+
+    assert reply.await_count == 1
+    text = reply.await_args.args[0]
+    assert "пошло" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_on_error_en(monkeypatch):
+    """on_error отвечает на английском при lang_mode=en."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from chatcore import memory
+
+    monkeypatch.setattr(scaffold, "Update", SimpleNamespace)
+
+    chat_id = 222
+    memory.set_lang_mode(chat_id, "en")
+
+    reply = AsyncMock()
+    message = SimpleNamespace(reply_text=reply)
+    update = SimpleNamespace(
+        effective_message=message,
+        effective_chat=SimpleNamespace(id=chat_id),
+        effective_user=SimpleNamespace(language_code="en"),
+    )
+    ctx = SimpleNamespace(error=RuntimeError("boom"))
+
+    bot = _make_scaffold()
+    await bot.on_error(update, ctx)
+
+    assert reply.await_count == 1
+    text = reply.await_args.args[0]
+    assert "went wrong" in text.lower()
+
+
+# ── Phase 1.5: язык кнопки = язык команды ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_on_callback_uses_ui_lang(monkeypatch):
+    """on_callback использует _ui_lang, а не get_last_lang — /lang en уважается."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+    from chatcore import memory, llm
+
+    chat_id = 333
+    memory.set_lang_mode(chat_id, "en")
+
+    cmd = ContentCommand("quote", "quotes", "cb_quote", "Цитату ✨", "Quote ✨")
+    bot = _make_scaffold(commands=[cmd])
+
+    replies = []
+    reply_text = AsyncMock(side_effect=lambda t, **kw: replies.append(t))
+    message = SimpleNamespace(
+        chat_id=chat_id,
+        reply_text=reply_text,
+    )
+    query = SimpleNamespace(
+        answer=AsyncMock(),
+        data="cb_quote",
+        message=message,
+    )
+    update = SimpleNamespace(
+        callback_query=query,
+        effective_user=SimpleNamespace(language_code="en"),
+        effective_chat=SimpleNamespace(id=chat_id),
+    )
+    ctx = SimpleNamespace()
+
+    await bot.on_callback(update, ctx)
+
+    # Кнопка должна отработать (один ответ)
+    assert reply_text.await_count == 1

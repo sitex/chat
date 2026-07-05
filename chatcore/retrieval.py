@@ -52,7 +52,7 @@ def _load_facts() -> list[dict]:
                     # помечаем источник для format_context
                     source_label = path.parent.name if path.parent != base else base.name
                     for fact in facts:
-                        if "source_label" not in fact:
+                        if "_source" not in fact:
                             fact = dict(fact)
                             fact["_source"] = source_label
                         all_facts.append(fact)

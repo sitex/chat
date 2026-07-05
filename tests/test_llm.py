@@ -18,12 +18,34 @@ class _FakeProc:
         self.returncode = rc
         self._stdout = stdout
         self._stderr = stderr
+        self.wait_called = False
 
     async def communicate(self):
         return self._stdout, self._stderr
 
     def kill(self):
         pass
+
+    async def wait(self):
+        self.wait_called = True
+
+
+class _HangProc:
+    """Процесс с вечным communicate() — имитирует зависший подпроцесс."""
+    def __init__(self):
+        self.returncode = None
+        self.wait_called = False
+        self.killed = False
+
+    async def communicate(self):
+        await asyncio.sleep(9999)
+        return b"", b""
+
+    def kill(self):
+        self.killed = True
+
+    async def wait(self):
+        self.wait_called = True
 
 MSGS = [{"role": "user", "content": "привет"}]
 
@@ -208,3 +230,59 @@ def test_summary_prompt_ru_has_guard():
 def test_summary_prompt_en_has_guard():
     prompt = llm._summary_prompt("", [{"role": "user", "content": "hi"}], "en")
     assert "technical glitch" in prompt
+
+
+# ── Phase 1.1: _kill_and_reap вызывает wait() после kill() ────────────────────
+
+@pytest.mark.asyncio
+async def test_grok_timeout_calls_wait(monkeypatch):
+    """При таймауте _grok должен вызывать wait() (не оставлять зомби)."""
+    proc = _HangProc()
+
+    async def _fake_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(llm, "GROK_TIMEOUT", 0.05)
+
+    with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
+        await llm._grok("sys", MSGS)
+
+    assert proc.killed
+    assert proc.wait_called
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_timeout_calls_wait(monkeypatch):
+    """При таймауте _claude_cli должен вызывать wait() (не оставлять зомби)."""
+    proc = _HangProc()
+
+    async def _fake_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(llm, "CLAUDE_CLI_TIMEOUT", 0.05)
+
+    with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
+        await llm._claude_cli("sys", MSGS)
+
+    assert proc.killed
+    assert proc.wait_called
+
+
+@pytest.mark.asyncio
+async def test_summary_cli_timeout_calls_wait(monkeypatch):
+    """При таймауте _summary_cli должен вызывать wait() (не оставлять зомби)."""
+    proc = _HangProc()
+
+    async def _fake_exec(*args, **kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(llm, "SUMMARY_TIMEOUT", 0.05)
+
+    with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
+        await llm._summary_cli("some prompt")
+
+    assert proc.killed
+    assert proc.wait_called

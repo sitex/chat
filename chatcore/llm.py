@@ -35,6 +35,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
@@ -47,6 +48,13 @@ from . import config as _config
 log = logging.getLogger("chatcore.llm")
 
 _THINK_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+
+
+async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
+    with contextlib.suppress(ProcessLookupError):
+        proc.kill()
+    with contextlib.suppress(Exception):
+        await proc.wait()
 
 GROK_BIN = os.path.expanduser(os.environ.get("GROK_BIN", "~/.grok/bin/grok"))
 CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
@@ -107,7 +115,7 @@ async def _grok(system: str, messages: list[dict]) -> str:
     try:
         stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
-        proc.kill()
+        await _kill_and_reap(proc)
         raise
     return stdout.decode().strip()
 
@@ -125,7 +133,7 @@ async def _claude_cli(system: str, messages: list[dict]) -> str:
     try:
         stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
-        proc.kill()
+        await _kill_and_reap(proc)
         raise
     if proc.returncode != 0:
         raise RuntimeError(
@@ -303,7 +311,7 @@ async def _summary_cli(prompt: str) -> str:
             proc.communicate(), timeout=SUMMARY_TIMEOUT
         )
     except (asyncio.TimeoutError, asyncio.CancelledError):
-        proc.kill()
+        await _kill_and_reap(proc)
         raise
     if proc.returncode != 0:
         raise RuntimeError(

@@ -291,7 +291,19 @@ class BotScaffold:
     async def _handle_content_cmd(
         self, cmd: ContentCommand, chat_id: int, lang: str, reply_fn
     ) -> None:
-        items = data_store.load(cmd.dataset)
+        try:
+            items = data_store.load(cmd.dataset)
+        except FileNotFoundError:
+            log.warning("dataset %r missing for /%s", cmd.dataset, cmd.command)
+            items = []
+        if not items:
+            msg = (
+                "Пока нечего показать — загляните позже. 🍵"
+                if lang == "ru"
+                else "Nothing to show yet — check back later. 🍵"
+            )
+            await reply_fn(msg, parse_mode=None, reply_markup=self._reply_keyboard(lang))
+            return
         item = _pick_item(items, chat_id, cmd)
         text = _format_item(item, lang, cmd)
         parse_mode = "HTML" if _needs_html(text) else None
@@ -304,7 +316,7 @@ class BotScaffold:
         query = update.callback_query
         await query.answer()
         chat_id = query.message.chat_id
-        lang = memory.get_last_lang(chat_id)
+        lang = self._ui_lang(update, chat_id)
         cmd = self._cb_index.get(query.data)
         if cmd is not None:
             await self._handle_content_cmd(
@@ -362,9 +374,18 @@ class BotScaffold:
         log.exception("Unhandled error while processing update", exc_info=ctx.error)
         if isinstance(update, Update) and update.effective_message:
             try:
-                await update.effective_message.reply_text(
+                lang = "ru"
+                try:
+                    chat_id = update.effective_chat.id
+                    lang = self._ui_lang(update, chat_id)
+                except Exception:
+                    pass
+                msg = (
                     "Хм, что-то пошло не так. Повторите, пожалуйста. 🍵"
+                    if lang == "ru"
+                    else "Hmm, something went wrong. Please try again. 🍵"
                 )
+                await update.effective_message.reply_text(msg)
             except Exception:
                 log.exception("Failed to send error notice to user")
 
