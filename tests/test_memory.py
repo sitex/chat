@@ -1,5 +1,4 @@
 """Тесты слоя памяти (SQLite) — история и namespaced seen-state."""
-import pytest
 
 from chatcore import memory
 

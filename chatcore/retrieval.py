@@ -28,7 +28,7 @@ def configure(paths: list[str | Path] | str | Path) -> None:
     """
     global _sources, _facts_cache
     _facts_cache = None  # сбросить кэш при повторной настройке
-    if isinstance(paths, (str, Path)):
+    if isinstance(paths, str | Path):
         paths = [paths]
     _sources = [Path(p) for p in paths]
 

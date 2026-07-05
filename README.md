@@ -119,4 +119,7 @@ chatcore/
 
 ---
 
+Аватарки ботов: `scripts/gen_avatar.py` (ComfyUI ERNIE + BotFather через Telethon).
+Зависимости `telethon`, `Pillow`, `numpy` ставятся отдельно — не входят в пакет.
+
 *Проект `chat` — внутренний инструмент, не публичная библиотека.*

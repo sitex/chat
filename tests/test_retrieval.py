@@ -3,6 +3,7 @@
 Полное покрытие — Phase 5.
 """
 import json
+
 import pytest
 
 from chatcore import retrieval

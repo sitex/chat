@@ -111,8 +111,6 @@ def test_reply_keyboard_en():
 
 def test_pick_item_with_seen_no_repeat(tmp_path):
     """seen-логика: элементы не повторяются до исчерпания."""
-    import json
-    from chatcore import memory
 
     chat_id = 444555
     items = [{"ru": f"item{i}", "en": f"item{i}"} for i in range(5)]
@@ -222,6 +220,7 @@ async def test_on_error_en(monkeypatch):
     """on_error отвечает на английском при lang_mode=en."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
+
     from chatcore import memory
 
     monkeypatch.setattr(scaffold, "Update", SimpleNamespace)
@@ -253,7 +252,8 @@ async def test_on_callback_uses_ui_lang(monkeypatch):
     """on_callback использует _ui_lang, а не get_last_lang — /lang en уважается."""
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
-    from chatcore import memory, llm
+
+    from chatcore import memory
 
     chat_id = 333
     memory.set_lang_mode(chat_id, "en")

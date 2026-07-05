@@ -63,6 +63,24 @@ async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
     with contextlib.suppress(Exception):
         await proc.wait()
 
+GROK_BIN: str
+CLAUDE_MODEL: str
+OLLAMA_HOST: str
+OLLAMA_MODEL: str
+MAX_TOKENS: int
+LLM_TIMEOUT: int
+LLM_OVERALL_TIMEOUT: int
+GROK_TIMEOUT: int
+CLAUDE_CLI_BIN: str
+CLAUDE_CLI_TIMEOUT: int
+CLAUDE_CLI_MODEL: str
+SUMMARY_MODEL: str
+SUMMARY_TIMEOUT: int
+CLIPROXY_BASE_URL: str
+CLIPROXY_API_KEY: str
+CLIPROXY_MODEL: str
+
+
 def _read_env() -> None:
     global GROK_BIN, CLAUDE_MODEL, OLLAMA_HOST, OLLAMA_MODEL, MAX_TOKENS
     global LLM_TIMEOUT, LLM_OVERALL_TIMEOUT, GROK_TIMEOUT
@@ -170,7 +188,7 @@ async def _cliproxy(system: str, messages: list[dict]) -> str:
                 model=CLIPROXY_MODEL,
                 max_tokens=MAX_TOKENS,
                 system=system,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
             ),
             timeout=LLM_TIMEOUT,
         )
@@ -186,7 +204,7 @@ async def _claude(system: str, messages: list[dict]) -> str:
                 model=CLAUDE_MODEL,
                 max_tokens=MAX_TOKENS,
                 system=system,
-                messages=messages,
+                messages=messages,  # type: ignore[arg-type]
             ),
             timeout=LLM_TIMEOUT,
         )

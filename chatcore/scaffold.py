@@ -37,8 +37,8 @@ import logging
 import os
 import random
 import re
-from dataclasses import dataclass, field
-from typing import Callable
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -54,7 +54,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import config, data_store, llm, memory, persona, retrieval
+from . import data_store, llm, memory, persona, retrieval
 
 log = logging.getLogger("chatcore.scaffold")
 
@@ -95,7 +95,8 @@ class ContentCommand:
 
 def _default_key(item: dict) -> str:
     """Ключ элемента для seen-state по умолчанию."""
-    import hashlib, json as _json
+    import hashlib
+    import json as _json
     return hashlib.md5(_json.dumps(item, sort_keys=True, ensure_ascii=False).encode()).hexdigest()[:12]
 
 
