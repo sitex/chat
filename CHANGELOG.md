@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-07-05
+
+### Added
+- `scaffold.py`: параметр `extra_handlers: list[BaseHandler] | None` в `BotScaffold.__init__`, `build_app()` и `run()` — регистрация кастомных PTB-хендлеров до catch-all `CallbackQueryHandler` (first-match в group 0)
+
+### Fixed
+- `deploy.yml` шаблон: убран невалидный job-level `if: ${{ secrets.VPS_HOST != '' }}` (джоб не стартовал в GHA)
+- `deploy.yml` шаблон: добавлен `--force-reinstall` в `pip install` (git-пин с той же версией не переустанавливался без флага)
+
 ## [0.1.0] — 2026-07-02
 
 ### Fixed
