@@ -283,3 +283,39 @@ async def test_on_callback_uses_ui_lang(monkeypatch):
 
     # Кнопка должна отработать (один ответ)
     assert reply_text.await_count == 1
+
+
+# ── Phase 5.2: порядок регистрации extra_handlers ─────────────────────────────
+
+def test_build_app_extra_handlers_order(monkeypatch):
+    """extra_handlers регистрируются после on_message, до catch-all CallbackQueryHandler."""
+    from unittest.mock import MagicMock, patch
+
+    from telegram.ext import CallbackQueryHandler as CQH
+    from telegram.ext import MessageHandler as MH
+
+    monkeypatch.setenv("BOT_TOKEN", "fake:token12345")
+
+    handlers_registered = []
+    fake_app = MagicMock()
+    fake_app.add_handler.side_effect = lambda h: handlers_registered.append(h)
+
+    with patch("chatcore.scaffold.ApplicationBuilder") as MockBuilder:
+        (
+            MockBuilder.return_value
+            .token.return_value
+            .post_init.return_value
+            .build.return_value
+        ) = fake_app
+
+        extra = MagicMock()
+        bot = _make_scaffold(extra_handlers=[extra])
+        bot.build_app()
+
+    # Позиции в порядке регистрации
+    extra_idx = handlers_registered.index(extra)
+    msg_idx = next(i for i, h in enumerate(handlers_registered) if isinstance(h, MH))
+    cq_idx = next(i for i, h in enumerate(handlers_registered) if isinstance(h, CQH))
+
+    assert msg_idx < extra_idx, "extra_handler должен быть после on_message"
+    assert extra_idx < cq_idx, "extra_handler должен быть до catch-all CallbackQueryHandler"

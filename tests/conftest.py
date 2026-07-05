@@ -59,8 +59,12 @@ def setup_chatcore_config(tmp_path):
     )
 
     # Сбрасываем кэши между тестами
-    from chatcore import data_store
+    from chatcore import data_store, retrieval
     data_store._cache.clear()
+
+    # Сбрасываем retrieval-глобалы (изоляция scaffold-тестов со study_paths)
+    retrieval._sources = []
+    retrieval._facts_cache = None
 
     # Сбрасываем соединение с БД
     memory.close()
