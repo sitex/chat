@@ -63,27 +63,34 @@ async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
     with contextlib.suppress(Exception):
         await proc.wait()
 
-GROK_BIN = os.path.expanduser(os.environ.get("GROK_BIN", "~/.grok/bin/grok"))
-CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
-OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
-MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "700"))
-LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "25"))
-# Жёсткий общий дедлайн на весь каскад бэкендов — чтобы generate() никогда
-# не зависал бесконечно (иначе обработчик сообщения молчит навсегда).
-LLM_OVERALL_TIMEOUT = int(os.environ.get("LLM_OVERALL_TIMEOUT", "60"))
-GROK_TIMEOUT = int(os.environ.get("GROK_TIMEOUT", "45"))
-CLAUDE_CLI_BIN = os.path.expanduser(
-    os.environ.get("CLAUDE_CLI_BIN", "/home/rocky/.nvm/versions/node/v22.19.0/bin/claude")
-)
-CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
-CLAUDE_CLI_MODEL = os.environ.get("CLAUDE_CLI_MODEL", "sonnet")
-SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "sonnet")
-SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
+def _read_env() -> None:
+    global GROK_BIN, CLAUDE_MODEL, OLLAMA_HOST, OLLAMA_MODEL, MAX_TOKENS
+    global LLM_TIMEOUT, LLM_OVERALL_TIMEOUT, GROK_TIMEOUT
+    global CLAUDE_CLI_BIN, CLAUDE_CLI_TIMEOUT, CLAUDE_CLI_MODEL
+    global SUMMARY_MODEL, SUMMARY_TIMEOUT
+    global CLIPROXY_BASE_URL, CLIPROXY_API_KEY, CLIPROXY_MODEL
+    GROK_BIN = os.path.expanduser(os.environ.get("GROK_BIN", "~/.grok/bin/grok"))
+    CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
+    OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
+    MAX_TOKENS = int(os.environ.get("LLM_MAX_TOKENS", "700"))
+    LLM_TIMEOUT = int(os.environ.get("LLM_TIMEOUT", "25"))
+    LLM_OVERALL_TIMEOUT = int(os.environ.get("LLM_OVERALL_TIMEOUT", "60"))
+    GROK_TIMEOUT = int(os.environ.get("GROK_TIMEOUT", "45"))
+    CLAUDE_CLI_BIN = os.path.expanduser(
+        os.environ.get("CLAUDE_CLI_BIN", "/home/rocky/.nvm/versions/node/v22.19.0/bin/claude")
+    )
+    CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
+    CLAUDE_CLI_MODEL = os.environ.get("CLAUDE_CLI_MODEL", "sonnet")
+    SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "sonnet")
+    SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
+    CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
+    CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
+    CLIPROXY_MODEL = os.environ.get("CLIPROXY_MODEL", "claude-sonnet-4-6")
 
-CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
-CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
-CLIPROXY_MODEL = os.environ.get("CLIPROXY_MODEL", "claude-sonnet-4-6")
+
+reload_env = _read_env
+_read_env()
 
 _MIN_ATTEMPT_BUDGET = 3.0
 

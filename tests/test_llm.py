@@ -315,3 +315,21 @@ async def test_budget_exhausted_before_fallback(monkeypatch):
         await llm.generate("sys", MSGS)
 
     assert not fallback_called[0]
+
+
+# ── Phase 3.1: reload_env() обновляет модульные константы ─────────────────────
+
+def test_reload_env_updates_constants(monkeypatch):
+    """reload_env() читает актуальное значение из os.environ."""
+    monkeypatch.setenv("LLM_TIMEOUT", "7")
+    llm.reload_env()
+    assert llm.LLM_TIMEOUT == 7
+
+
+def test_reload_env_restores_defaults(monkeypatch):
+    """После снятия env-переменной reload_env() восстанавливает дефолт."""
+    monkeypatch.setenv("LLM_TIMEOUT", "7")
+    llm.reload_env()
+    monkeypatch.delenv("LLM_TIMEOUT")
+    llm.reload_env()
+    assert llm.LLM_TIMEOUT == 25

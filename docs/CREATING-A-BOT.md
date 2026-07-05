@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-load_dotenv()  # до импорта chatcore — модульные константы читают env
+load_dotenv()  # опционально: run() сам перечитывает env через llm.reload_env()
 
 from chatcore import config, scaffold
 from chatcore.scaffold import ContentCommand

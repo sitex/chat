@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+- `llm.reload_env()` — перечитывает все env-константы; `scaffold.run()` вызывает его после `load_dotenv()`, снимая требование «load_dotenv до import chatcore».
+
+### Risk
+- Ручные присваивания `llm.CONST = x` до вызова `run()` будут затёрты `reload_env()` — нужно использовать env-переменные.
+
 ## [0.1.1] — 2026-07-05
 
 ### Added

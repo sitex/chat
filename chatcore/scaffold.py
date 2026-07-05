@@ -495,6 +495,7 @@ def run(
         extra_handlers:     PTB-хендлеры, регистрируются до catch-all CallbackQueryHandler.
     """
     load_dotenv()
+    llm.reload_env()
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,
