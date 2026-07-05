@@ -26,9 +26,9 @@
 
 ВАЖНО: cliproxy с OAuth-аккаунтом Claude Code инжектит свой system-промпт
 ("You are Claude Code, Anthropic's official CLI for Claude.") поверх нашего.
-Это ломает персону — модель игнорирует инструкции о памяти. Поэтому основной
-бэкенд — claude-cli (--system-prompt полностью заменяет промпт); cliproxy —
-только фолбэк второго уровня (при падении claude-cli).
+Это ломает персону. Поэтому backend=claude-cli работает в строгом режиме:
+при ошибке _claude_cli исключение поднимается наверх (bot.py покажет
+fallback-текст); фолбэка на cliproxy или ollama НЕТ.
 
 Метка ассистента в «плоском» тексте для grok берётся из chatcore.config.
 
@@ -282,14 +282,11 @@ async def _cascade(backend: str, system: str, messages: list[dict], deadline: fl
         except asyncio.TimeoutError:
             raise
         except Exception as e:
-            log.warning("claude-cli failed (%s), falling back to cliproxy", e)
-        try:
-            return await _attempt(_cliproxy, system, messages, deadline)
-        except asyncio.TimeoutError:
+            # Фолбэк на cliproxy инжектит промпт Claude Code поверх персоны
+            # (persona-break); фолбэк на ollama даёт другую модель без
+            # предупреждения. Честнее упасть — bot покажет fallback-текст.
+            log.error("claude-cli failed, no fallback (strict mode): %s", e)
             raise
-        except Exception as e:
-            log.warning("cliproxy fallback failed (%s), falling back to ollama", e)
-        return await _attempt(_ollama, system, messages, deadline)
 
     if backend == "claude":
         try:

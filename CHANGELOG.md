@@ -1,5 +1,15 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.3] — 2026-07-05
+
+### Changed (Breaking)
+- **`llm.py`**: backend `claude-cli` теперь работает в **строгом режиме** — фолбэк на `cliproxy` и `ollama` убран. При ошибке `claude -p` исключение поднимается наверх; бот показывает fallback-текст вместо ответа со сломанной персоной. Причина: cliproxy инжектирует промпт «You are Claude Code…» поверх персонажа.
+
+### Tests
+- Удалены `test_claude_cli_cascades_to_cliproxy`, `test_claude_cli_cascades_to_ollama`, `test_claude_cli_cascades_to_ollama_when_cliproxy_also_fails`.
+- Добавлены `test_claude_cli_strict_raises`, `test_claude_cli_strict_never_calls_fallbacks`.
+- `test_budget_exhausted_before_fallback` переведён на backend `grok` (бюджетная логика `_attempt` не затрагивает строгий каскад).
+
 ## [0.1.2] — 2026-07-05
 
 ### Added

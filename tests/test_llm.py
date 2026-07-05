@@ -113,14 +113,32 @@ def test_flatten_messages_uses_config_labels():
 
 
 @pytest.mark.asyncio
-async def test_claude_cli_cascades_to_ollama(monkeypatch):
+async def test_claude_cli_strict_raises(monkeypatch):
+    """При падении _claude_cli generate() поднимает исключение (строгий режим)."""
     monkeypatch.setenv("LLM_BACKEND", "claude-cli")
     monkeypatch.setattr(llm, "_claude_cli", _fail)
-    monkeypatch.setattr(llm, "_cliproxy", _fail)
-    monkeypatch.setattr(llm, "_ollama", _ok)
 
-    out = await llm.generate("sys", MSGS)
-    assert out == "fallback reply"
+    with pytest.raises(RuntimeError, match="backend down"):
+        await llm.generate("sys", MSGS)
+
+
+@pytest.mark.asyncio
+async def test_claude_cli_strict_never_calls_fallbacks(monkeypatch):
+    """При падении _claude_cli фолбэки _cliproxy и _ollama НЕ вызываются."""
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    monkeypatch.setattr(llm, "_claude_cli", _fail)
+
+    async def _sentinel_cliproxy(*_a, **_k):
+        pytest.fail("_cliproxy не должен вызываться в строгом режиме claude-cli")
+
+    async def _sentinel_ollama(*_a, **_k):
+        pytest.fail("_ollama не должен вызываться в строгом режиме claude-cli")
+
+    monkeypatch.setattr(llm, "_cliproxy", _sentinel_cliproxy)
+    monkeypatch.setattr(llm, "_ollama", _sentinel_ollama)
+
+    with pytest.raises(RuntimeError):
+        await llm.generate("sys", MSGS)
 
 
 @pytest.mark.asyncio
@@ -195,29 +213,7 @@ async def test_claude_cli_raises_on_login_prompt(monkeypatch):
         await llm._claude_cli("sys", MSGS)
 
 
-# ── регрессия 3: каскад claude-cli → cliproxy → ollama ────────────────────────
-
-@pytest.mark.asyncio
-async def test_claude_cli_cascades_to_cliproxy(monkeypatch):
-    """При падении _claude_cli — фолбэк на _cliproxy."""
-    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
-    monkeypatch.setattr(llm, "_claude_cli", _fail)
-    monkeypatch.setattr(llm, "_cliproxy", _ok)
-
-    out = await llm.generate("sys", MSGS)
-    assert out == "fallback reply"
-
-
-@pytest.mark.asyncio
-async def test_claude_cli_cascades_to_ollama_when_cliproxy_also_fails(monkeypatch):
-    """При падении и _claude_cli и _cliproxy — фолбэк на _ollama."""
-    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
-    monkeypatch.setattr(llm, "_claude_cli", _fail)
-    monkeypatch.setattr(llm, "_cliproxy", _fail)
-    monkeypatch.setattr(llm, "_ollama", _ok)
-
-    out = await llm.generate("sys", MSGS)
-    assert out == "fallback reply"
+# ── регрессия 3: строгий режим claude-cli (нет фолбэков на cliproxy/ollama) ────
 
 
 # ── регрессия 4: guard суммаризатора ──────────────────────────────────────────
@@ -292,8 +288,12 @@ async def test_summary_cli_timeout_calls_wait(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_budget_exhausted_before_fallback(monkeypatch):
-    """Primary съедает бюджет → fallback не стартует, TimeoutError упоминает budget."""
-    monkeypatch.setenv("LLM_BACKEND", "claude-cli")
+    """Primary съедает бюджет → fallback не стартует, TimeoutError упоминает budget.
+
+    Используем grok (с каскадом): slow_fail + MIN_ATTEMPT_BUDGET > remaining
+    → _claude_cli-fallback пропускается c TimeoutError("budget exhausted").
+    """
+    monkeypatch.setenv("LLM_BACKEND", "grok")
     monkeypatch.setattr(llm, "LLM_OVERALL_TIMEOUT", 0.5)
     monkeypatch.setattr(llm, "_MIN_ATTEMPT_BUDGET", 0.3)
 
@@ -307,8 +307,8 @@ async def test_budget_exhausted_before_fallback(monkeypatch):
         fallback_called[0] = True
         return "fallback reply"
 
-    monkeypatch.setattr(llm, "_claude_cli", _slow_fail)
-    monkeypatch.setattr(llm, "_cliproxy", _fallback)
+    monkeypatch.setattr(llm, "_grok", _slow_fail)
+    monkeypatch.setattr(llm, "_claude_cli", _fallback)
     monkeypatch.setattr(llm, "_ollama", _fallback)
 
     with pytest.raises(asyncio.TimeoutError, match="budget"):
