@@ -122,7 +122,90 @@ scaffold.run(..., study_paths=[STUDY_PATH])
 `chatcore.retrieval` автоматически найдёт `facts.json` в корне и во всех
 подкаталогах одного уровня.
 
-## 6. Деплой
+## 6. Расширение бота: extra_handlers, extra_bot_commands, bot_commands_menu
+
+`scaffold.run()` принимает три необязательных параметра для нестандартной логики:
+
+```python
+from telegram.ext import CallbackQueryHandler
+
+scaffold.run(
+    ...,
+    # Дополнительные пары (команда, описание) в меню BotFather:
+    extra_bot_commands=[("quiz", "Начать викторину")],
+
+    # PTB-хендлеры, регистрируются ПОСЛЕ on_message, ДО catch-all CallbackQueryHandler.
+    # Порядок: CommandHandler'ы команд → MessageHandler(TEXT) → extra_handlers → CallbackQueryHandler.
+    extra_handlers=[
+        CallbackQueryHandler(my_quiz_callback, pattern="^quiz_"),
+    ],
+
+    # Отключить автоматическую установку меню команд через set_my_commands (по умолчанию True):
+    bot_commands_menu=True,
+)
+```
+
+**Порядок регистрации хендлеров в `build_app()`:**
+1. `/start`, `/help`, `/reset`, `/lang` — CommandHandler
+2. ContentCommand-хендлеры (по одному на каждый `ContentCommand` в `commands`)
+3. `MessageHandler(TEXT & ~COMMAND)` — обычные сообщения (LLM)
+4. `extra_handlers` — ваши кастомные хендлеры (например, quiz-callback)
+5. `CallbackQueryHandler` catch-all — inline-кнопки контента
+
+Если ваш `CallbackQueryHandler` должен перехватывать только свои данные, используйте параметр `pattern=`.
+
+### Пример: quiz-бот с отдельным callback
+
+```python
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import CallbackQueryHandler, ContextTypes
+
+async def quiz_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.callback_query.answer()
+    # ... логика викторины ...
+
+scaffold.run(
+    ...,
+    extra_bot_commands=[("quiz", "Пройти тест")],
+    extra_handlers=[CallbackQueryHandler(quiz_callback, pattern="^q:")],
+)
+```
+
+## 7. Тестирование и инструменты разработки
+
+```bash
+# Установить dev-зависимости:
+pip install -e "../chat[dev]"
+
+# Запустить все проверки (lint + typecheck + tests):
+make check
+
+# Только тесты:
+make test
+
+# Только линт (ruff):
+make lint
+
+# Только типы (mypy):
+make typecheck
+```
+
+### memory.close() в тестах
+
+Если тест меняет конфигурацию `config.setup()` (другая БД), вызывайте `memory.close()` после:
+
+```python
+import chatcore.memory as memory
+
+def test_something(tmp_path):
+    config.setup(db_path=tmp_path / "test.db", ...)
+    try:
+        # ... тест ...
+    finally:
+        memory.close()
+```
+
+## 8. Деплой
 
 1. Скопируй шаблоны из `chatcore/templates/`:
    - `bot.service.template` → `chat-mybot-bot.service` (заполни `{{ ... }}`)

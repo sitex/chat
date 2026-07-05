@@ -30,7 +30,7 @@ scaffold.run(
 ```
 chatcore/
 ├── config.py       # setup() — пути data/db, метки ролей
-├── llm.py          # LLM-каскад: cliproxy → grok → claude → ollama
+├── llm.py          # LLM-каскад: cliproxy → grok → claude-cli → claude → ollama
 ├── memory.py       # SQLite: история + настройки + namespaced seen-state
 ├── data_store.py   # Hot-reload JSON-загрузчик (data/*.json)
 ├── persona.py      # Сборка system prompt из persona.json
@@ -90,32 +90,7 @@ chatcore/
 
 ## Changelog
 
-Формат: [Keep a Changelog](https://keepachangelog.com/ru/1.0.0/)
-
-### [Unreleased]
-
-#### Added
-- `chatcore` — пакет с переиспользуемым ядром из 5 родственных ботов
-  - `config.py` — единая настройка путей и меток ролей
-  - `llm.py` — каскад cliproxy→grok→claude→ollama с `LLM_OVERALL_TIMEOUT`
-  - `memory.py` — SQLite с namespaced seen-state и idempotent-миграциями
-  - `data_store.py` — hot-reload JSON
-  - `persona.py` — сборка system prompt из persona.json (+ опц. extra_context)
-  - `retrieval.py` — keyword-RAG по одному или нескольким `facts.json`
-  - `scaffold.py` — `BotScaffold` + `ContentCommand` + `run()` — декларативный каркас бота
-  - `templates/` — шаблоны `.service`, `ci.yml`, `deploy.yml`, `.env.example`
-- `docs/CREATING-A-BOT.md` — инструкция создания нового бота за 15 минут
-- `docs/OPTIONAL-MODULES.md` — план реализации TTS, web-frontend, геймификации
-- `tests/` — 33 теста (llm, memory, persona, scaffold) перенесены из chat-mentalist
-- **`chat-davidkey`** — новый бот: чат-персона David Key (NLP + гипнотерапия),
-  с RAG по `study-davidkey/{nlp,hypnotherapy}/facts.json`
-- **`chat-mentalist` мигрирован** на chatcore: src/llm+memory+persona+data_store
-  заменены импортами из chatcore; тесты зелёные
-
-#### Architecture
-- Дублирование кода ~90% между 5 ботами сведено к нулю
-- Новый бот = `data/persona.json` + тонкий `bot.py` (< 80 строк) + `.env`
-- LLM-каскад, seen-state, RAG — один источник правды в chatcore
+→ [CHANGELOG.md](CHANGELOG.md) — полная история изменений (формат Keep a Changelog).
 
 ---
 

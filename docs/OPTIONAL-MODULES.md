@@ -102,12 +102,14 @@ class GameResult:
 
 ## Статус ботов и миграция
 
+Актуальный статус — в [README.md](../README.md#статус-миграции-на-chatcore).
+
 | Бот | Статус | Следующий шаг |
 |-----|--------|---------------|
-| `chat-mentalist` | ✅ на chatcore | — |
-| `chat-davidkey` | ✅ создан на chatcore | Получить BOT_TOKEN, деплой |
-| `chat-jacobs` | ⬜ локальные модули | Заменить src/llm+memory+persona+data_store на chatcore |
-| `chat-vishvanath` | ⬜ локальные модули | То же + retrieval уже в chatcore |
+| `chat-mentalist` | ✅ мигрирован как эталон | — |
+| `chat-davidkey` | ✅ создан на chatcore | — |
+| `chat-jacobs` | ✅ мигрирован (JacobsScaffold, rolling-summary) | — |
+| `chat-vishvanath` | ✅ мигрирован (scaffold.run + RAG study_paths) | — |
 | `chat-mannix` | ⬜ нетипичный (TTS/web/CLI) | Извлечь ядро в chatcore.tts + chatcore.web |
 | `study-socialself` | ⬜ bot.py в study | Вынести в chat-socialself, добавить quiz |
 | `study-read-people` | ⬜ полноценный bot/ | Мигрировать на chatcore |
