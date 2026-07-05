@@ -501,6 +501,7 @@ def run(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
     scaffold_obj = BotScaffold(
         bot_name=bot_name,
         start_text_ru=start_text_ru,

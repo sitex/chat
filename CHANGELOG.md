@@ -12,6 +12,7 @@
 - `tests/test_retrieval.py` — 32 теста retrieval (configure, _load_facts, retrieve, format_context, end-to-end) (Phase 5).
 
 ### Fixed
+- **`scaffold.py`**: httpx (INFO) писал полный URL Bot API с BOT_TOKEN в journald — `logging.getLogger("httpx").setLevel(logging.WARNING)` убирает токен из журналов.
 - **`llm.py`**: зомби-процессы — добавлен `_kill_and_reap(proc)` с `await proc.wait()` в except-блоках `_grok`, `_claude_cli`, `_summary_cli` (Phase 1).
 - **`llm.py`**: утечка HTTP-клиентов — `AsyncAnthropic` создаётся через `async with` в `_cliproxy` и `_claude` (Phase 2).
 - **`llm.py`**: deadline-aware каскад — `_attempt()` проверяет оставшийся бюджет до старта каждого фолбэка; `generate()` передаёт `deadline = monotonic() + LLM_OVERALL_TIMEOUT` (Phase 2).
