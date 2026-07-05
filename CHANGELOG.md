@@ -22,6 +22,12 @@
 - **`memory.py`**: после `sqlite3.connect` устанавливаются `PRAGMA journal_mode=WAL`, `synchronous=NORMAL`, `busy_timeout=5000` (Phase 2). ⚠️ Рядом с `bot.db` появятся `-wal`/`-shm`; деплой-скрипты, копирующие только `bot.db`, нужно обновить.
 - **`deploy.yml` шаблон**: бэкпорт `--force-reinstall` в `pip install` (заявлен в 0.1.1, не бэкпортирован в шаблон) (Phase 6).
 
+### Documentation
+- `docs/CREATING-A-BOT.md`: добавлен раздел `extra_handlers` / `extra_bot_commands` / `bot_commands_menu` (сигнатура `run()`, порядок регистрации, пример); упомянуты `make check` и `memory.close()` (Phase 6).
+- `README.md`: убран встроенный дубль changelog (заменён ссылкой на CHANGELOG.md); каскад LLM обновлён (`cliproxy→grok→claude-cli→claude→ollama`); актуальное число тестов (Phase 6).
+- `docs/OPTIONAL-MODULES.md`: таблица статусов приведена к README (Phase 6).
+- `CHANGELOG.md`: исправлено «Telethon-обёртка» → «PTB-каркас» в описании 0.1.1 (Phase 6).
+
 ### Removed
 - `gen_avatars.py`, `gen_avatar_ifs.py`, `gen_avatar_lee_jacobs.py`, `gen_avatar_david_key.py` — заменены единым `scripts/gen_avatar.py` (Phase 4).
 - `chatcore.egg-info/` удалён из git-индекса (был закоммичен по ошибке) (Phase 4).
