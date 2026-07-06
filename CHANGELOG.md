@@ -1,5 +1,23 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.4] — 2026-07-06
+
+### Added
+- `chatcore/singleinstance.py` — flock-guard: второй инстанс на той же машине получает CRITICAL-лог и SystemExit(1). Отключается через `SINGLE_INSTANCE_LOCK=0` (#14).
+- `scaffold.run()`: при старте берёт эксклюзивный flock на `<db_path>.lock`; GC-безопасный держатель лока.
+- `BotScaffold.on_error()`: Conflict-watchdog — ≥5 ошибок `telegram.error.Conflict` подряд в окне 60 с → `os._exit(78)`; короткое перекрытие при деплое (1–2 Conflict) порога не достигает (#14).
+- `scripts/check_single_instance.sh` — аудит дублей: проверяет каждый ExecStart в system+user менеджерах, количество процессов и 409 Conflict в journald (#14).
+- `scripts/systemd/check-single-instance.{service,timer}` — user-level oneshot-юнит с ежедневным таймером; при FAIL — failed-состояние видно в `systemctl --user --failed` (#14).
+- `docs/single-instance.md` — инвариант, таблица канонов менеджеров, инструкция по аудиту и установке таймера (#14).
+
+### Changed
+- `chatcore/templates/deploy.yml`: заменён `sudo systemctl restart` на user-level рестарт + guard-шаг (`sudo -n systemctl stop/disable {{ SERVICE_NAME }} 2>/dev/null || true`) перед `systemctl --user restart` (#14). ⚠️ Шаблон-breaking: существующие боты нужно обновить deploy.yml.
+- `chatcore/templates/bot.service.template`: добавлен комментарий-инвариант (user-only, не копировать в /etc/systemd/system/) (#14).
+
+### Tests
+- `tests/test_singleinstance.py` — acquire/отказ/повторный захват/PermissionError-ветка (4 теста).
+- `tests/test_scaffold.py` — watchdog: порог 5, окно 60 с, сброс при паузе, no-reply на Conflict, не-Conflict не растит счётчик (5 тестов).
+
 ## [0.1.3] — 2026-07-05
 
 ### Added
