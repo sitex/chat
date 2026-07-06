@@ -58,9 +58,18 @@ done
 _check_procs() {
     local name="$1"
     local exec_start="$2"
-    # Берём первый токен ExecStart (путь до бинаря)
+    # Берём путь до бинаря (первый токен) — он уникален для venv-ботов.
+    # Если бинарь — общий интерпретатор (python3, bash и т.п.), пропускаем:
+    # такой счёт всегда > 1 и не является признаком дубля.
     local binary
     binary=$(echo "$exec_start" | awk '{print $1}')
+    case "$binary" in
+        /usr/bin/python3|/usr/bin/python|/bin/bash|/usr/bin/bash|\
+        /home/rocky/miniconda3/bin/python3|/home/rocky/miniconda3/bin/python|\
+        /usr/bin/dbus-broker-launch|/usr/local/bin/git-sync-debounce.sh)
+            return 0  # общий интерпретатор — пропускаем
+            ;;
+    esac
     local count
     count=$(pgrep -fc "$binary" 2>/dev/null || true)
     if [[ "$count" -gt 1 ]]; then
