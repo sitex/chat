@@ -1,0 +1,9 @@
+[Unit]
+Description=Аудит дублей инстансов ботов
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/projects/chat/scripts/check_single_instance.sh
+StandardOutput=journal
+StandardError=journal

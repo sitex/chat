@@ -1,0 +1,9 @@
+[Unit]
+Description=Ежедневный аудит дублей инстансов ботов
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+
+[Install]
+WantedBy=timers.target

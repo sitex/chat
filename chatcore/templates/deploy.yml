@@ -22,4 +22,9 @@ jobs:
             git reset --hard origin/main
             git checkout --force -- .
             .venv/bin/pip install -q --force-reinstall -r requirements.txt
-            sudo systemctl restart {{ SERVICE_NAME }}
+            # Один менеджер: гасим одноимённый system-юнит, если существует
+            sudo -n systemctl stop {{ SERVICE_NAME }} 2>/dev/null || true
+            sudo -n systemctl disable {{ SERVICE_NAME }} 2>/dev/null || true
+            systemctl --user daemon-reload
+            systemctl --user restart {{ SERVICE_NAME }}
+            systemctl --user --no-pager status {{ SERVICE_NAME }} | head -5

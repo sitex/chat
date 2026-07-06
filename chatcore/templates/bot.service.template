@@ -1,3 +1,4 @@
+# Инвариант: user-level юнит. Устанавливать только в ~/.config/systemd/user/, не в /etc/systemd/system/.
 [Unit]
 Description={{ BOT_DESCRIPTION }}
 After=network-online.target

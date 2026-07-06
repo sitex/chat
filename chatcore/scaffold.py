@@ -37,8 +37,10 @@ import logging
 import os
 import random
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 from telegram import BotCommand, InlineKeyboardButton, InlineKeyboardMarkup, Update
@@ -54,7 +56,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import admin, data_store, llm, memory, persona, ratelimit, retrieval
+from . import admin, config, data_store, llm, memory, persona, ratelimit, retrieval
 
 log = logging.getLogger("chatcore.scaffold")
 
@@ -224,6 +226,8 @@ class BotScaffold:
         self.extra_bot_commands = extra_bot_commands or []
         self.extra_handlers = extra_handlers or []
         self._limiter = ratelimit.RateLimiter(rate_limit, rate_period)
+        self._conflict_count: int = 0
+        self._conflict_last: float = 0.0
 
         # Конфигурируем retrieval если заданы пути
         if study_paths:
@@ -386,6 +390,19 @@ class BotScaffold:
 
     async def on_error(self, update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Глобальный обработчик ошибок."""
+        from telegram.error import Conflict
+        if isinstance(ctx.error, Conflict):
+            now = time.monotonic()
+            if now - self._conflict_last < 60:
+                self._conflict_count += 1
+            else:
+                self._conflict_count = 1
+            self._conflict_last = now
+            log.error("409 Conflict #%d: второй getUpdates с этим токеном", self._conflict_count)
+            if self._conflict_count >= 5:
+                log.critical("5×409 подряд — дубль инстанса (возможно, на другой машине). Выходим.")
+                os._exit(78)
+            return
         log.exception("Unhandled error while processing update", exc_info=ctx.error)
         if isinstance(update, Update) and update.effective_message:
             try:
@@ -517,6 +534,9 @@ def run(
     """
     load_dotenv()
     llm.reload_env()
+    if os.environ.get("SINGLE_INSTANCE_LOCK", "1") != "0":
+        from . import singleinstance
+        _lock = singleinstance.acquire(Path(str(config.get_db_path()) + ".lock"))
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         level=logging.INFO,

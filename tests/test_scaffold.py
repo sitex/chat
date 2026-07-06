@@ -187,6 +187,130 @@ async def test_handle_content_cmd_missing_dataset(tmp_path):
     assert "check back" in replies[0]
 
 
+# ── Conflict-watchdog ─────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_conflict_watchdog_triggers_on_fifth(monkeypatch):
+    """5 Conflict подряд в окне 60 с → os._exit(78)."""
+    from types import SimpleNamespace
+
+    from telegram.error import Conflict
+
+    exit_calls = []
+    monkeypatch.setattr("os._exit", lambda code: exit_calls.append(code))
+
+    t = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: t[0])
+
+    bot = _make_scaffold()
+    for _ in range(5):
+        t[0] += 5.0  # +5 с между ошибками (< 60)
+        ctx = SimpleNamespace(error=Conflict("duplicate"))
+        await bot.on_error(SimpleNamespace(effective_message=None), ctx)
+
+    assert exit_calls == [78]
+
+
+@pytest.mark.asyncio
+async def test_conflict_watchdog_no_exit_on_four(monkeypatch):
+    """4 Conflict подряд — os._exit не вызывается."""
+    from types import SimpleNamespace
+
+    from telegram.error import Conflict
+
+    exit_calls = []
+    monkeypatch.setattr("os._exit", lambda code: exit_calls.append(code))
+
+    t = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: t[0])
+
+    bot = _make_scaffold()
+    for _ in range(4):
+        t[0] += 5.0
+        ctx = SimpleNamespace(error=Conflict("duplicate"))
+        await bot.on_error(SimpleNamespace(effective_message=None), ctx)
+
+    assert exit_calls == []
+
+
+@pytest.mark.asyncio
+async def test_conflict_watchdog_resets_after_gap(monkeypatch):
+    """Пауза > 60 с между Conflict сбрасывает серию."""
+    from types import SimpleNamespace
+
+    from telegram.error import Conflict
+
+    exit_calls = []
+    monkeypatch.setattr("os._exit", lambda code: exit_calls.append(code))
+
+    t = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: t[0])
+
+    bot = _make_scaffold()
+    # 4 подряд — недостаточно
+    for _ in range(4):
+        t[0] += 5.0
+        ctx = SimpleNamespace(error=Conflict("duplicate"))
+        await bot.on_error(SimpleNamespace(effective_message=None), ctx)
+
+    # Пауза > 60 с → счётчик сбросится
+    t[0] += 120.0
+    ctx = SimpleNamespace(error=Conflict("duplicate"))
+    await bot.on_error(SimpleNamespace(effective_message=None), ctx)
+
+    assert exit_calls == []
+
+
+@pytest.mark.asyncio
+async def test_conflict_does_not_reply_to_user(monkeypatch):
+    """Conflict-ошибка не отправляет пользователю сообщение."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from telegram.error import Conflict
+
+    monkeypatch.setattr("os._exit", lambda code: None)
+    t = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: t[0])
+
+    reply = AsyncMock()
+    message = SimpleNamespace(reply_text=reply)
+    update = SimpleNamespace(effective_message=message)
+
+    bot = _make_scaffold()
+    for _ in range(5):
+        t[0] += 5.0
+        ctx = SimpleNamespace(error=Conflict("duplicate"))
+        await bot.on_error(update, ctx)
+
+    assert reply.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_non_conflict_does_not_increment_counter(monkeypatch):
+    """Не-Conflict ошибки не увеличивают счётчик конфликтов."""
+    from types import SimpleNamespace
+
+
+    exit_calls = []
+    monkeypatch.setattr("os._exit", lambda code: exit_calls.append(code))
+    monkeypatch.setattr(scaffold, "Update", SimpleNamespace)
+
+    t = [0.0]
+    monkeypatch.setattr("time.monotonic", lambda: t[0])
+
+    bot = _make_scaffold()
+    # 10 обычных ошибок — счётчик Conflict не должен расти
+    for _ in range(10):
+        t[0] += 5.0
+        ctx = SimpleNamespace(error=RuntimeError("some error"))
+        update = SimpleNamespace(effective_message=None)
+        await bot.on_error(update, ctx)
+
+    assert bot._conflict_count == 0
+    assert exit_calls == []
+
+
 # ── Phase 1.4: on_error локализован ───────────────────────────────────────────
 
 @pytest.mark.asyncio
