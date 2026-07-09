@@ -63,7 +63,12 @@ DEFAULT_PERSONAS = [
 # Отображаемые имена — фолбэк, если в persona.json name пустой.
 NAME_FALLBACK = {
     "vishvanath": "Шри Вишванатх",
-    "ifs": "Гид по IFS",
+    "ifs": "Ричард Шварц",
+}
+
+# Явные переопределения имени для круглого стола (приоритет над persona.json).
+NAME_OVERRIDE = {
+    "ifs": "Ричард Шварц",
 }
 
 DEFAULT_TOPIC = "Судьба предопределена, или мы сами создаём свою жизнь?"
@@ -106,7 +111,7 @@ def load_persona(key: str, num: int) -> dict:
     if not path.exists():
         raise FileNotFoundError(f"нет персоны: {path}")
     data = json.loads(path.read_text(encoding="utf-8"))
-    name = data.get("name") or NAME_FALLBACK.get(key) or key
+    name = NAME_OVERRIDE.get(key) or data.get("name") or NAME_FALLBACK.get(key) or key
     return {"key": key, "num": num, "name": name, "data": data}
 
 
