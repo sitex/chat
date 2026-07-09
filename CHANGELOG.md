@@ -4,6 +4,7 @@
 
 ### Added
 - `/table 1,3,5: тема` в table_bot.py — выбор подмножества участников: числа/запятые перед первым двоеточием = номера 1–11 (дедупликация, минимум 2), иначе весь текст = тема; состав передаётся в `roundtable.py --personas` (#17).
+- Аватарка и описание `@rocky_roundtable_bot`: `avatars/rocky_roundtable.png` (Grok Imagine, установка через BotFather), description/short_description через Bot API (#18).
 
 ### Changed
 - `roundtable.py`: номер участника вне диапазона 1–11 отсеивается с сообщением, а не роняет скрипт IndexError (#17).
