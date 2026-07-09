@@ -2,9 +2,14 @@
 """Круглый стол персон chatcore.
 
 Берёт тему и персон из семейства (../chat-*/data/persona.json) и прогоняет
-обсуждение: каждая персона по очереди высказывается в своём стиле, видя все
-предыдущие реплики, — соглашается, спорит, поддевает других. Участники
-пронумерованы (1–11), к ним можно обращаться по номеру.
+обсуждение: каждая персона высказывается в своём стиле, видя все предыдущие
+реплики, — соглашается, спорит, поддевает других. Участники пронумерованы
+(1–11), к ним можно обращаться по номеру.
+
+Порядок внутри круга живой: после каждой реплики выбирается следующий оратор —
+тот, к кому обратились, или (по решению LLM-режиссёра) тот, кому явно есть что
+ответить. Каждый высказывается ровно один раз за круг. --sequential возвращает
+фиксированный порядок.
 
 Движок — общий LLM-каскад chatcore.llm (backend из окружения: cliproxy →
 grok → claude-cli → claude → ollama). Персональной инфраструктуры (config,
@@ -31,6 +36,7 @@ import argparse
 import asyncio
 import json
 import queue
+import re
 import sys
 import threading
 from pathlib import Path
@@ -191,6 +197,55 @@ async def next_command(timeout: float) -> str | None:
     return None
 
 
+# ── выбор следующего оратора ─────────────────────────────────────────────────
+
+DIRECTOR_PROMPT = (
+    "Ты — режиссёр круглого стола. По последним репликам выбери, кто из ещё "
+    "не высказавшихся участников сейчас ответит уместнее всего: к кому "
+    "обратились, кого задели, у кого явно есть что возразить или добавить. "
+    "Ответь ТОЛЬКО номером участника, без пояснений."
+)
+
+
+def _addressed(text: str, remaining: list[dict]) -> dict | None:
+    """Если в реплике прямо обратились к оставшемуся участнику — он и отвечает."""
+    for p in remaining:
+        if f"№{p['num']}" in text or re.search(rf"\b{re.escape(p['name'])}\b", text):
+            return p
+    return None
+
+
+async def pick_next(
+    remaining: list[dict], transcript: list[tuple[str, str]], topic: str
+) -> dict:
+    """Кто из оставшихся говорит следующим: прямое обращение → он; иначе LLM."""
+    if len(remaining) == 1 or not transcript:
+        return remaining[0]
+    hit = _addressed(transcript[-1][1], remaining)
+    if hit:
+        return hit
+    lines = [f"Тема: «{topic}»", "", "Последние реплики:"]
+    for name, text in transcript[-6:]:
+        lines.append(f"{name}: {text}")
+    lines.append("")
+    lines.append("Ещё не высказались в этом круге:")
+    for p in remaining:
+        lines.append(f"{p['num']}. {p['name']}")
+    lines.append("")
+    lines.append("Кто отвечает следующим? Только номер.")
+    try:
+        out = await llm.generate(DIRECTOR_PROMPT, [{"role": "user", "content": "\n".join(lines)}])
+        m = re.search(r"\d+", out)
+        if m:
+            num = int(m.group())
+            for p in remaining:
+                if p["num"] == num:
+                    return p
+    except Exception:  # noqa: BLE001 — сломался режиссёр → идём по порядку
+        pass
+    return remaining[0]
+
+
 # ── прогон ───────────────────────────────────────────────────────────────────
 
 async def run_round(
@@ -198,8 +253,14 @@ async def run_round(
     prompts: dict[str, str],
     topic: str,
     transcript: list[tuple[str, str]],
+    sequential: bool = False,
 ) -> None:
-    for p in personas:
+    remaining = list(personas)
+    while remaining:
+        p = remaining.pop(0) if sequential else None
+        if p is None:
+            p = await pick_next(remaining, transcript, topic)
+            remaining.remove(p)
         name = p["name"]
         user_msg = build_turn_message(topic, transcript, name)
         try:
@@ -214,7 +275,10 @@ async def run_round(
         say(f"\n\033[1m{name}:\033[0m {reply}")
 
 
-async def run(personas: list[dict], topic: str, rounds: int, interactive: bool) -> list[tuple[str, str]]:
+async def run(
+    personas: list[dict], topic: str, rounds: int, interactive: bool,
+    sequential: bool = False,
+) -> list[tuple[str, str]]:
     prompts = {p["key"]: build_persona_prompt(p, personas, topic) for p in personas}
     transcript: list[tuple[str, str]] = []
     emit({
@@ -229,7 +293,7 @@ async def run(personas: list[dict], topic: str, rounds: int, interactive: bool) 
         round_no = 0
         while True:
             round_no += 1
-            await run_round(personas, prompts, topic, transcript)
+            await run_round(personas, prompts, topic, transcript, sequential)
             emit({"event": "round_done", "round": round_no})
             cmd = await next_command(STDIN_TIMEOUT)
             if cmd is None or cmd.upper() == "STOP":
@@ -243,7 +307,7 @@ async def run(personas: list[dict], topic: str, rounds: int, interactive: bool) 
         for r in range(1, rounds + 1):
             if rounds > 1:
                 say(f"\n{'=' * 60}\n  РАУНД {r}\n{'=' * 60}")
-            await run_round(personas, prompts, topic, transcript)
+            await run_round(personas, prompts, topic, transcript, sequential)
 
     emit({"event": "done", "replies": len(transcript)})
     return transcript
@@ -269,6 +333,8 @@ def main() -> None:
     )
     ap.add_argument("--jsonl", action="store_true", help="события JSON-строками в stdout")
     ap.add_argument("--interactive", action="store_true", help="команды через stdin после каждого круга")
+    ap.add_argument("--sequential", action="store_true",
+                    help="фиксированный порядок вместо выбора режиссёром")
     ap.add_argument("--out", help="сохранить транскрипт в markdown-файл")
     args = ap.parse_args()
     JSONL = args.jsonl
@@ -290,7 +356,8 @@ def main() -> None:
     say(f"Участники ({len(personas)}):\n{roster(personas)}")
     say(f"Backend: {backend} | interactive={args.interactive}")
 
-    transcript = asyncio.run(run(personas, args.topic, args.rounds, args.interactive))
+    transcript = asyncio.run(
+        run(personas, args.topic, args.rounds, args.interactive, args.sequential))
 
     if args.out:
         Path(args.out).write_text(to_markdown(args.topic, transcript, backend), encoding="utf-8")
