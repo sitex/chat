@@ -1,5 +1,17 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.5] — 2026-07-09
+
+### Added
+- `scripts/roundtable.py` — движок круглого стола персон: тема + 11 участников из семейства chat-*, режимы `--jsonl` (события JSON-строками для ботов) и `--interactive` (stdin: `MORE`/`STOP`/текст = реплика Ведущего, автозавершение после 600 с тишины) (#15).
+- Живой порядок круга: следующего оратора выбирает режиссёр — прямое обращение («№3»/имя) → отвечает адресат, иначе LLM решает, кому есть что сказать; каждый говорит один раз за круг, `--sequential` возвращает фиксированный порядок (#15).
+- `NAME_OVERRIDE` в roundtable: участник ifs отображается как «Ричард Шварц» (persona.json ботов не тронут).
+- `scripts/table_bot.py` + `scripts/systemd/table-bot.service` — standalone Telegram-бот стола `@rocky_roundtable_bot` для VPS: long-poll, allowlist, кнопки «Ещё круг»/«Завершить», обычный текст = реплика Ведущего (#16).
+- Деплой на VPS Contabo: клон репо + venv с chatcore, deploy key для chat-mannix, `CLAUDE_CLI_BIN` в env юнита; связка проверена e2e на claude-cli (#16).
+
+### Notes
+- Команда `/table` также врезана в manager-bot (sitex/telegram-mcp#6) — локальный вариант стола на том же движке.
+
 ## [0.1.4] — 2026-07-06
 
 ### Added
