@@ -342,6 +342,9 @@ def main() -> None:
     personas = []
     for token in (t.strip() for t in args.personas.split(",") if t.strip()):
         # номер участника (1–11) или ключ
+        if token.isdigit() and not 1 <= int(token) <= len(DEFAULT_PERSONAS):
+            say(f"! нет участника №{token} (есть 1–{len(DEFAULT_PERSONAS)})")
+            continue
         key = DEFAULT_PERSONAS[int(token) - 1] if token.isdigit() else token
         num = DEFAULT_PERSONAS.index(key) + 1 if key in DEFAULT_PERSONAS else len(personas) + 1
         try:

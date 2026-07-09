@@ -63,6 +63,29 @@ def api(method: str, **kwargs) -> dict:
 _table: dict | None = None
 _table_lock = threading.Lock()
 
+PERSONA_COUNT = 11  # участников в DEFAULT_PERSONAS движка
+
+
+def parse_table_args(rest: str) -> tuple[str | None, str, str | None]:
+    """'1,3,5: тема' → (personas, topic, error).
+
+    Составом считаются только числа/запятые перед первым двоеточием —
+    тема с двоеточием внутри не ломается.
+    """
+    head, sep, tail = rest.partition(":")
+    if not sep or not head.strip() or head.strip(" ,0123456789"):
+        return None, rest, None
+    nums = [n for n in (t.strip() for t in head.split(",")) if n]
+    bad = [n for n in nums if not 1 <= int(n) <= PERSONA_COUNT]
+    if bad:
+        return None, "", f"нет участника №{', №'.join(bad)} (есть 1–{PERSONA_COUNT})"
+    uniq = list(dict.fromkeys(nums))
+    if len(uniq) < 2:
+        return None, "", "нужно минимум 2 участника"
+    if not tail.strip():
+        return None, "", "после списка участников укажите тему"
+    return ",".join(uniq), tail.strip(), None
+
 _TABLE_KB = {"inline_keyboard": [[
     {"text": "▶️ Ещё круг", "callback_data": "table:more"},
     {"text": "⏹ Завершить", "callback_data": "table:stop"},
@@ -76,7 +99,7 @@ def table_active(chat: int | None = None) -> bool:
     return chat is None or t["chat"] == chat
 
 
-def start_table(chat: int, topic: str) -> None:
+def start_table(chat: int, topic: str, personas: str | None = None) -> None:
     global _table
     with _table_lock:
         if table_active():
@@ -90,7 +113,8 @@ def start_table(chat: int, topic: str) -> None:
                    LLM_OVERALL_TIMEOUT="120")
         proc = subprocess.Popen(
             [sys.executable, str(ROUNDTABLE_SCRIPT), "--jsonl", "--interactive",
-             "--topic", topic],
+             "--topic", topic]
+            + (["--personas", personas] if personas else []),
             cwd=str(ROUNDTABLE_DIR), env=env, text=True,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -162,7 +186,8 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
 # ── обработка обновлений ─────────────────────────────────────────────────────
 
 HELP = ("🎙 Бот круглого стола персон.\n\n"
-        "/table <тема> — запустить стол (11 участников)\n"
+        "/table <тема> — запустить стол (все 11 участников)\n"
+        "/table 1,3,5: <тема> — стол выбранных участников (номера 1–11)\n"
         "/stop — завершить стол\n"
         "Обычный текст при активном столе — реплика Ведущего.")
 
@@ -197,12 +222,17 @@ def handle(update: dict) -> None:
     if not text:
         return
     if text.startswith("/table"):
-        topic = text[len("/table"):].strip()
-        if not topic:
+        rest = text[len("/table"):].strip()
+        if not rest:
             api("sendMessage", chat_id=chat,
-                text="Формат: /table <тема>. Пример: /table Свобода воли — иллюзия?")
+                text="Формат: /table <тема> или /table 1,3,5: <тема>. "
+                     "Пример: /table Свобода воли — иллюзия?")
             return
-        start_table(chat, topic)
+        personas, topic, err = parse_table_args(rest)
+        if err:
+            api("sendMessage", chat_id=chat, text=f"⚠️ {err}")
+            return
+        start_table(chat, topic, personas)
         return
     if text == "/stop":
         if table_active():
