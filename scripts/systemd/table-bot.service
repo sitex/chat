@@ -1,0 +1,13 @@
+[Unit]
+Description=Table bot — круглый стол персон chatcore
+After=network-online.target
+
+[Service]
+ExecStart=%h/projects/chat/.venv/bin/python %h/projects/chat/scripts/table_bot.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target
