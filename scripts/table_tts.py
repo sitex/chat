@@ -46,6 +46,9 @@ _SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
 # Длину реплики лучше контролировать через TABLE_LLM_MAX_TOKENS в .table-bot.env.
 TTS_MAX_SENTENCES = 0
 
+# Пауза между репликами спикеров (мс). Переопределяется через TTS_GAP_MS.
+TTS_GAP_MS = int(os.environ.get("TTS_GAP_MS", "700"))
+
 
 def clean_for_tts(text: str) -> str:
     """Markdown-звёздочки, подчёркивания, эмодзи, «№3» → «номер 3» и т.п."""
@@ -109,10 +112,36 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
         return None
 
 
-def concat_ogg(oggs: list[bytes]) -> bytes | None:
-    """Склеить список OGG/Opus файлов в один через ffmpeg concat."""
+def _make_silence_ogg(ms: int) -> bytes | None:
+    """Генерирует OGG/Opus тишину заданной длины (мс) через ffmpeg."""
+    try:
+        proc = subprocess.run(
+            ["ffmpeg", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono",
+             "-t", f"{ms / 1000:.3f}", "-c:a", "libopus", "-b:a", "32k",
+             "-f", "ogg", "pipe:1", "-loglevel", "error"],
+            capture_output=True, timeout=10,
+        )
+        return proc.stdout if proc.returncode == 0 and proc.stdout else None
+    except Exception:
+        return None
+
+
+def concat_ogg(oggs: list[bytes], gap_ms: int = 0) -> bytes | None:
+    """Склеить список OGG/Opus файлов в один через ffmpeg concat.
+
+    gap_ms > 0 — вставлять тишину указанной длины между сегментами.
+    """
     if not oggs:
         return None
+    if gap_ms > 0 and len(oggs) > 1:
+        silence = _make_silence_ogg(gap_ms)
+        if silence:
+            interleaved: list[bytes] = []
+            for i, ogg in enumerate(oggs):
+                interleaved.append(ogg)
+                if i < len(oggs) - 1:
+                    interleaved.append(silence)
+            oggs = interleaved
     if len(oggs) == 1:
         return oggs[0]
     tmpfiles: list[str] = []
@@ -213,7 +242,7 @@ class TTSWorker:
                     oggs = self._synth_parallel(pending)
                     pending = []
                     if oggs:
-                        ogg = concat_ogg(oggs)
+                        ogg = concat_ogg(oggs, gap_ms=TTS_GAP_MS)
                         if ogg:
                             combined.append(ogg)
                 continue
