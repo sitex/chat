@@ -271,7 +271,7 @@ async def run_round(
             continue
         reply = reply.strip()
         transcript.append((name, reply))
-        emit({"event": "reply", "num": p["num"], "name": name, "text": reply})
+        emit({"event": "reply", "num": p["num"], "key": p["key"], "name": name, "text": reply})
         say(f"\n\033[1m{name}:\033[0m {reply}")
 
 

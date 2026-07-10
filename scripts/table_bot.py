@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 import httpx
+import table_tts
 
 HOME = Path.home()
 ENV_FILE = HOME / ".table-bot.env"
@@ -46,12 +47,24 @@ CONF = _env()
 API = f"https://api.telegram.org/bot{CONF['BOT_TOKEN']}"
 ALLOW = {s.strip() for s in CONF.get("ALLOW_FROM", "").split(",") if s.strip()}
 CLAUDE_CLI_BIN = CONF.get("CLAUDE_CLI_BIN", "/usr/bin/claude")
+TTS_URL = CONF.get("TTS_URL", "http://127.0.0.1:8902")
+TTS_TOKEN = CONF.get("TTS_TOKEN", "")
 
 
 def api(method: str, **kwargs) -> dict:
     payload = {k: v for k, v in kwargs.items() if v is not None}
     try:
         r = httpx.post(f"{API}/{method}", json=payload, timeout=70)
+        return r.json()
+    except httpx.HTTPError:
+        return {"ok": False}
+
+
+def api_voice(chat: int, ogg: bytes) -> dict:
+    try:
+        r = httpx.post(f"{API}/sendVoice", data={"chat_id": chat},
+                       files={"voice": ("reply.ogg", ogg, "audio/ogg")},
+                       timeout=70)
         return r.json()
     except httpx.HTTPError:
         return {"ok": False}
@@ -119,8 +132,9 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
         )
+        tts_ok = bool(TTS_TOKEN) and table_tts.healthz(TTS_URL)
         th = threading.Thread(target=_table_reader, args=(chat, proc), daemon=True)
-        _table = {"chat": chat, "proc": proc, "thread": th}
+        _table = {"chat": chat, "proc": proc, "thread": th, "tts": tts_ok}
         th.start()
 
 
@@ -169,6 +183,10 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
                              f"Участники:\n{names}\n\nПервый круг…")
         elif kind == "reply":
             _table_say(chat, f"*{ev['name']}:* {ev['text']}")
+            if _table and _table.get("tts") and ev.get("key"):
+                ogg = table_tts.synthesize_ogg(ev["text"], ev["key"], TTS_URL, TTS_TOKEN)
+                if ogg:
+                    api_voice(chat, ogg)
         elif kind == "error":
             _table_say(chat, f"⚠️ {ev['name']}: реплика выпала")
         elif kind == "round_done":
