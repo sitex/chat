@@ -17,6 +17,7 @@
                                     # заданных CLIPROXY_API_KEY+MODEL
     TABLE_LLM_BACKEND=cliproxy      # опционально; дефолт: claude-cli
     TABLE_LLM_MAX_TOKENS=250        # опционально; дефолт: 250
+    TABLE_ROUNDS=3                  # опционально; авто-раунды подряд (дефолт: 1)
 
 Запуск — systemd --user юнит scripts/systemd/table-bot.service.
 """
@@ -163,7 +164,9 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
             worker.put("Начинаем круглый стол.", "mentalist", deliver=False)
         th = threading.Thread(target=_table_reader,
                               args=(chat, proc, worker), daemon=True)
-        _table = {"chat": chat, "proc": proc, "thread": th, "tts": tts_ok}
+        auto_rounds = max(1, int(CONF.get("TABLE_ROUNDS", "1")))
+        _table = {"chat": chat, "proc": proc, "thread": th, "tts": tts_ok,
+                  "auto_rounds": auto_rounds}
         th.start()
 
 
@@ -200,6 +203,8 @@ def _table_say(chat: int, text: str, reply_markup: dict | None = None) -> None:
 def _table_reader(chat: int, proc: subprocess.Popen,
                   worker: table_tts.TTSWorker | None = None) -> None:
     global _table
+    with _table_lock:
+        auto_rounds = _table["auto_rounds"] if _table else 1
     for line in proc.stdout:
         try:
             ev = json.loads(line)
@@ -218,9 +223,18 @@ def _table_reader(chat: int, proc: subprocess.Popen,
         elif kind == "error":
             _table_say(chat, f"⚠️ {ev['name']}: реплика выпала")
         elif kind == "round_done":
-            _table_say(chat, f"Круг {ev['round']} завершён. Ещё круг, "
-                             f"реплика Ведущего текстом — или завершаем?",
-                       reply_markup=_TABLE_KB)
+            rnd = ev["round"]
+            if rnd < auto_rounds:
+                # автопродолжение — пишем MORE прямо в stdin
+                try:
+                    proc.stdin.write("MORE\n")
+                    proc.stdin.flush()
+                except OSError:
+                    pass
+            else:
+                _table_say(chat, f"Круг {rnd} завершён. Ещё круг, "
+                                 f"реплика Ведущего текстом — или завершаем?",
+                           reply_markup=_TABLE_KB)
         elif kind == "done":
             _table_say(chat, f"🏁 Стол закрыт ({ev['replies']} реплик).")
     proc.wait()
