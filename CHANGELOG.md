@@ -1,5 +1,23 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.8] — 2026-07-10
+
+### Added
+- `chatcore/llm.py`: `generate(backend=...)` — опциональный override бэкенда для служебных вызовов (режиссёр стола); дефолт не изменился (#20).
+- `chatcore/llm.py`: UA-обход клоакинга CLIProxyAPI для claude-моделей — `User-Agent: claude-cli/...` + префикс-блок «You are Claude Code...» в system; персона — вторым блоком. Grok-путь прод-ботов не затронут (#20).
+- `scripts/table_tts.py`: класс `TTSWorker` — фоновый поток-конвейер; доставка голосовых строго по порядку, `deliver=False` для прогрева, тихий фолбэк при `synth → None` (#20).
+- `tests/test_roundtable.py`: 8 unit-тестов `pick_next` — передача backend, фолбэк по порядку при ошибке/не-числе, короткие пути без LLM (#20).
+- `tests/test_llm.py`: тесты backend-override (`generate`), UA-обхода cliproxy для claude- и не-claude-моделей (#20).
+- `tests/test_table_tts.py`: 4 unit-теста `TTSWorker` — порядок, deliver=False, synth→None, close (#20).
+
+### Changed
+- `scripts/roundtable.py`: `DIRECTOR_BACKEND` из окружения — режиссёр `pick_next()` использует отдельный (дешёвый) бэкенд без холодного старта Node (#20).
+- `scripts/table_bot.py`: `start_table` пробрасывает `CLIPROXY_*` и `DIRECTOR_BACKEND` из `~/.table-bot.env`; `TABLE_LLM_BACKEND` (дефолт `claude-cli`) и `TABLE_LLM_MAX_TOKENS` (дефолт `250`) конфигурируют бэкенд и лимит реплик (#20).
+- `scripts/table_bot.py`: `_table_reader` использует `TTSWorker` — текст реплики уходит в чат немедленно, синтез аудио не блокирует следующий текст; прогрев TTS-модели на старте стола (#20).
+
+### Infrastructure (podcastify, home machine)
+- TTS стола переведён на GGUF-бэкенд: `tts_service_higgs.py` получил режим `HIGGS_BACKEND=gguf` — subprocess `higgs_cli` (HiggsTTS.cpp, квант Q4_K, ~3–4 GB VRAM вместо ~13 GB у sglang-omni, синтез реплики ~3.5 с через туннель). Код chat не менялся — тот же туннель VPS:8902 → home:8903 (sitex/podcastify#7, #19).
+
 ## [0.1.7] — 2026-07-10
 
 ### Added
