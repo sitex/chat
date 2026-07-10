@@ -10,11 +10,13 @@
     BOT_TOKEN=123456:ABC-...
     ALLOW_FROM=343350188            # id через запятую
     CLAUDE_CLI_BIN=/usr/bin/claude  # опционально
-    CLIPROXY_BASE_URL=http://...:8317   # опционально (режиссёр стола)
+    CLIPROXY_BASE_URL=http://...:8317   # опционально (режиссёр + реплики стола)
     CLIPROXY_API_KEY=...
     CLIPROXY_MODEL=claude-sonnet-4-6
     DIRECTOR_BACKEND=cliproxy       # опционально; дефолт: cliproxy при
                                     # заданных CLIPROXY_API_KEY+MODEL
+    TABLE_LLM_BACKEND=cliproxy      # опционально; дефолт: claude-cli
+    TABLE_LLM_MAX_TOKENS=250        # опционально; дефолт: 250
 
 Запуск — systemd --user юнит scripts/systemd/table-bot.service.
 """
@@ -125,10 +127,11 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
                 text="Стол уже идёт. /stop — завершить его сначала.")
             return
         env = dict(os.environ,
-                   LLM_BACKEND="claude-cli",
+                   LLM_BACKEND=CONF.get("TABLE_LLM_BACKEND", "claude-cli"),
                    CLAUDE_CLI_BIN=CLAUDE_CLI_BIN,
                    CLAUDE_CLI_TIMEOUT="90",
-                   LLM_OVERALL_TIMEOUT="120")
+                   LLM_OVERALL_TIMEOUT="120",
+                   LLM_MAX_TOKENS=CONF.get("TABLE_LLM_MAX_TOKENS", "250"))
         # cliproxy-креды и бэкенд режиссёра — из ~/.table-bot.env
         for k in ("CLIPROXY_BASE_URL", "CLIPROXY_API_KEY", "CLIPROXY_MODEL"):
             if CONF.get(k):

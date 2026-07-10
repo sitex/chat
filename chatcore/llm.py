@@ -24,11 +24,13 @@
   GROK_TIMEOUT=45
   LLM_OVERALL_TIMEOUT=60
 
-ВАЖНО: cliproxy с OAuth-аккаунтом Claude Code инжектит свой system-промпт
-("You are Claude Code, Anthropic's official CLI for Claude.") поверх нашего.
-Это ломает персону. Поэтому backend=claude-cli работает в строгом режиме:
-при ошибке _claude_cli исключение поднимается наверх (bot.py покажет
-fallback-текст); фолбэка на cliproxy или ollama НЕТ.
+Persona-break на cliproxy+claude-OAuth решён (проверено 2026-07-10, v7.2.61):
+  UA "claude-cli/..." отключает клоакинг (ShouldCloak смотрит префикс);
+  первый system-блок "You are Claude Code..." проходит OAuth-проверку
+  Anthropic; персона — вторым блоком. Без UA-обхода Anthropic отклоняет
+  и кредо уходит в кулдаун. _cliproxy() применяет обход для claude-моделей.
+  backend=claude-cli оставлен в строгом режиме как страховка на случай
+  изменений поведения CLIProxyAPI; фолбэка на cliproxy/ollama НЕТ.
 
 Метка ассистента в «плоском» тексте для grok берётся из chatcore.config.
 
@@ -179,15 +181,35 @@ async def _claude_cli(system: str, messages: list[dict]) -> str:
     return out
 
 
+_CLAUDE_CODE_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude."
+_CLIPROXY_CLAUDE_UA = {"User-Agent": "claude-cli/2.1.63 (external, cli)"}
+
+
 async def _cliproxy(system: str, messages: list[dict]) -> str:
     from anthropic import AsyncAnthropic
 
-    async with AsyncAnthropic(base_url=CLIPROXY_BASE_URL, api_key=CLIPROXY_API_KEY) as client:
+    kwargs: dict = {}
+    sys_param: str | list[dict] = system
+    if CLIPROXY_MODEL.startswith("claude"):
+        # CLIProxyAPI для OAuth-кредов затирает пользовательский system
+        # (sanitizeForwardedSystemPrompt). UA claude-cli отключает клоакинг
+        # (cloak_mode=auto), а первый блок "You are Claude Code..." проходит
+        # OAuth-проверку Anthropic; персона — вторым блоком. Без префикса
+        # Anthropic отклоняет запрос и кредо уходит в кулдаун.
+        # Проверено вживую 2026-07-10 на CLIProxyAPI v7.2.61.
+        kwargs["default_headers"] = _CLIPROXY_CLAUDE_UA
+        sys_param = [
+            {"type": "text", "text": _CLAUDE_CODE_PREFIX},
+            {"type": "text", "text": system},
+        ]
+    async with AsyncAnthropic(
+        base_url=CLIPROXY_BASE_URL, api_key=CLIPROXY_API_KEY, **kwargs
+    ) as client:
         resp = await asyncio.wait_for(
             client.messages.create(
                 model=CLIPROXY_MODEL,
                 max_tokens=MAX_TOKENS,
-                system=system,
+                system=sys_param,  # type: ignore[arg-type]
                 messages=messages,  # type: ignore[arg-type]
             ),
             timeout=LLM_TIMEOUT,

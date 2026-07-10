@@ -342,6 +342,90 @@ async def test_budget_exhausted_before_fallback(monkeypatch):
     assert not fallback_called[0]
 
 
+# ── Phase 2: _cliproxy UA-обход клоакинга ─────────────────────────────────────
+
+class _FakeMessage:
+    def __init__(self, text: str):
+        self.content = [_FakeBlock(text)]
+
+
+class _FakeBlock:
+    def __init__(self, text: str):
+        self.type = "text"
+        self.text = text
+
+
+class _FakeMessages:
+    """Фейковый client.messages с перехватом kwargs."""
+    def __init__(self, captured: dict, response_text: str = "reply"):
+        self._captured = captured
+        self._text = response_text
+
+    async def create(self, **kwargs):
+        self._captured.update(kwargs)
+        return _FakeMessage(self._text)
+
+
+class _FakeAnthropic:
+    """Фейковый AsyncAnthropic: перехватывает kwargs конструктора."""
+    def __init__(self, captured_init: dict, captured_create: dict, **kwargs):
+        captured_init.update(kwargs)
+        self.messages = _FakeMessages(captured_create)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_cliproxy_claude_model_adds_ua_and_prefix(monkeypatch):
+    """claude-модель → UA-заголовок + префикс-блок Claude Code в system."""
+    init_kw: dict = {}
+    create_kw: dict = {}
+
+    def _fake_anthropic(**kwargs):
+        return _FakeAnthropic(init_kw, create_kw, **kwargs)
+
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(llm, "CLIPROXY_BASE_URL", "http://proxy:8317")
+    monkeypatch.setattr(llm, "CLIPROXY_API_KEY", "key")
+
+    import anthropic as _anthropic_mod
+    monkeypatch.setattr(_anthropic_mod, "AsyncAnthropic", _fake_anthropic)
+
+    await llm._cliproxy("Персона-система", MSGS)
+
+    assert init_kw.get("default_headers", {}).get("User-Agent", "").startswith("claude-cli")
+    system = create_kw["system"]
+    assert isinstance(system, list) and len(system) == 2
+    assert system[0]["text"] == llm._CLAUDE_CODE_PREFIX
+    assert system[1]["text"] == "Персона-система"
+
+
+@pytest.mark.asyncio
+async def test_cliproxy_non_claude_model_no_ua(monkeypatch):
+    """Не-claude модель (grok-...) → без заголовка, system — строка."""
+    init_kw: dict = {}
+    create_kw: dict = {}
+
+    def _fake_anthropic(**kwargs):
+        return _FakeAnthropic(init_kw, create_kw, **kwargs)
+
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "grok-3-mini")
+    monkeypatch.setattr(llm, "CLIPROXY_BASE_URL", "http://proxy:8317")
+    monkeypatch.setattr(llm, "CLIPROXY_API_KEY", "key")
+
+    import anthropic as _anthropic_mod
+    monkeypatch.setattr(_anthropic_mod, "AsyncAnthropic", _fake_anthropic)
+
+    await llm._cliproxy("Простая-система", MSGS)
+
+    assert "default_headers" not in init_kw
+    assert create_kw["system"] == "Простая-система"
+
+
 # ── Phase 3.1: reload_env() обновляет модульные константы ─────────────────────
 
 def test_reload_env_updates_constants(monkeypatch):
