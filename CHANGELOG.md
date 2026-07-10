@@ -1,5 +1,20 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.7] — 2026-07-10
+
+### Added
+- `scripts/table_tts.py` — модуль озвучки круглого стола: `VOICE_BY_KEY` (11 персон), `clean_for_tts` (markdown/emoji/№N), `healthz`, `synthesize_ogg` (WAV → OGG через ffmpeg, timeout 180 с, тихий фолбэк) (#19).
+- `tests/test_table_tts.py` — 21 unit-тест с моками httpx/ffmpeg: happy path, все ветки → None, синхронизация VOICE_BY_KEY ↔ DEFAULT_PERSONAS (#19).
+
+### Changed
+- `scripts/roundtable.py:274`: событие `reply` теперь содержит поле `key` персоны (аддитивно, обратно совместимо) (#19).
+- `scripts/table_bot.py`: добавлены `TTS_URL`/`TTS_TOKEN` из `.env`, `api_voice()`, healthz-флаг в `start_table()`, вызов `synthesize_ogg` в `_table_reader()` с тихим фолбэком (#19).
+
+### Infrastructure (podcastify, home machine)
+- `tts_service_higgs.py`: добавлены 10 голосов `table-*` (ref WAV из bootstrap) — туннель VPS:8902 → home:8903 (#19).
+- `tools/bootstrap_table_voices.py`: скрипт bootstrap ref WAV через OmniVoice design-mode (#19).
+- `tts_service_omni.py`: зарегистрированы 10 voice slots + исправлены instruct-строки под валидный OmniVoice API (#19).
+
 ## [0.1.6] — 2026-07-09
 
 ### Added
