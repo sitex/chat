@@ -181,6 +181,32 @@ def test_synthesize_ogg_markdown_cleaned_before_send():
         assert "жирный текст" in call_json["text"]
 
 
+# ── concat_ogg ───────────────────────────────────────────────────────────────
+
+
+def test_concat_ogg_single_passthrough():
+    """Один файл — возвращается без склейки."""
+    data = b"OggS\x00fake"
+    assert table_tts.concat_ogg([data]) is data
+
+
+def test_concat_ogg_empty_returns_none():
+    assert table_tts.concat_ogg([]) is None
+
+
+def test_concat_ogg_multiple_calls_ffmpeg(tmp_path):
+    """Несколько файлов → ffmpeg concat → возвращает вывод."""
+    fake_combined = b"OggS\x00combined"
+    proc = MagicMock()
+    proc.returncode = 0
+    proc.stdout = fake_combined
+    with patch("table_tts.subprocess.run", return_value=proc) as mrun:
+        result = table_tts.concat_ogg([b"OggS\x00a", b"OggS\x00b"])
+    assert result == fake_combined
+    cmd = mrun.call_args[0][0]
+    assert "concat" in cmd
+
+
 # ── TTSWorker ─────────────────────────────────────────────────────────────────
 
 
@@ -199,20 +225,47 @@ def _collect_send() -> tuple[list, callable]:
     return received, send
 
 
-def test_tts_worker_delivers_in_order():
-    """Три put с медленным synth → send получает байты в порядке постановки."""
+def test_tts_worker_end_round_sends_combined():
+    """put x3 + end_round → send вызван один раз (concat)."""
     received, send = _collect_send()
-    w = table_tts.TTSWorker(synth=_slow_synth(0.02), send=send)
-    w.put("А", "sigma")
-    w.put("Б", "sigma")
-    w.put("В", "sigma")
-    w.close()
-    w.join(timeout=5)
-    assert received == [b"\xd0\x90", b"\xd0\x91", b"\xd0\x92"]
+
+    def synth(text: str, key: str) -> bytes:
+        return text.encode()
+
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)) as mc:
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("А", "sigma")
+        w.put("Б", "sigma")
+        w.put("В", "sigma")
+        w.end_round()
+        w.close()
+        w.join(timeout=5)
+    assert len(received) == 1
+    mc.assert_called_once()
+    args = mc.call_args[0][0]
+    assert args == [b"\xd0\x90", b"\xd0\x91", b"\xd0\x92"]
 
 
-def test_tts_worker_deliver_false_synth_called_send_not():
-    """deliver=False: synth вызван (прогрев), send — нет."""
+def test_tts_worker_two_rounds_two_sends():
+    """Два end_round → два send-вызова."""
+    received, send = _collect_send()
+
+    def synth(text: str, key: str) -> bytes:
+        return text.encode()
+
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("Р1А", "sigma")
+        w.end_round()
+        w.put("Р2А", "sigma")
+        w.end_round()
+        w.close()
+        w.join(timeout=5)
+    assert len(received) == 2
+
+
+def test_tts_worker_deliver_false_not_accumulated():
+    """deliver=False (прогрев): synth вызван, в буфер не попадает."""
     synth_calls: list = []
 
     def synth(text: str, key: str) -> bytes:
@@ -220,16 +273,18 @@ def test_tts_worker_deliver_false_synth_called_send_not():
         return text.encode()
 
     received, send = _collect_send()
-    w = table_tts.TTSWorker(synth=synth, send=send)
-    w.put("прогрев", "mentalist", deliver=False)
-    w.close()
-    w.join(timeout=5)
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("прогрев", "mentalist", deliver=False)
+        w.end_round()
+        w.close()
+        w.join(timeout=5)
     assert synth_calls == ["прогрев"]
     assert received == []
 
 
-def test_tts_worker_synth_none_skips_send_worker_lives():
-    """synth → None: send не вызван, воркер жив — следующий item доставлен."""
+def test_tts_worker_synth_none_skipped_in_round():
+    """synth → None не попадает в буфер; остальные склеиваются."""
     call_count = [0]
 
     def synth(text: str, key: str):
@@ -237,21 +292,23 @@ def test_tts_worker_synth_none_skips_send_worker_lives():
         return None if text == "пустой" else text.encode()
 
     received, send = _collect_send()
-    w = table_tts.TTSWorker(synth=synth, send=send)
-    w.put("пустой", "sigma")
-    w.put("живой", "sigma")
-    w.close()
-    w.join(timeout=5)
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("пустой", "sigma")
+        w.put("живой", "sigma")
+        w.end_round()
+        w.close()
+        w.join(timeout=5)
     assert call_count[0] == 2
-    assert received == [b"\xd0\xb6\xd0\xb8\xd0\xb2\xd0\xbe\xd0\xb9"]
+    assert len(received) == 1
 
 
-def test_tts_worker_close_drains_queue():
-    """close(): хвост очереди дорабатывается до sentinel."""
+def test_tts_worker_close_without_end_round_no_send():
+    """close() без end_round — накопленные OGG отбрасываются, send не вызван."""
     received, send = _collect_send()
     w = table_tts.TTSWorker(synth=_slow_synth(0.01), send=send)
-    for i in range(5):
+    for i in range(3):
         w.put(str(i), "sigma")
     w.close()
-    w.join(timeout=10)
-    assert len(received) == 5
+    w.join(timeout=5)
+    assert received == []

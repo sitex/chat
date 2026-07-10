@@ -1,9 +1,11 @@
 """Озвучка реплик круглого стола через OmniVoice (туннель 127.0.0.1:8902)."""
 from __future__ import annotations
 
+import os
 import queue
 import re
 import subprocess
+import tempfile
 import threading
 
 import httpx
@@ -96,12 +98,55 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
         return None
 
 
-class TTSWorker:
-    """Фоновый TTS-конвейер: очередь (text, key, deliver) → synth → send.
+def concat_ogg(oggs: list[bytes]) -> bytes | None:
+    """Склеить список OGG/Opus файлов в один через ffmpeg concat."""
+    if not oggs:
+        return None
+    if len(oggs) == 1:
+        return oggs[0]
+    tmpfiles: list[str] = []
+    list_path = ""
+    try:
+        for ogg in oggs:
+            f = tempfile.NamedTemporaryFile(suffix=".ogg", delete=False)
+            f.write(ogg)
+            f.close()
+            tmpfiles.append(f.name)
+        lf = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+        lf.write("\n".join(f"file '{p}'" for p in tmpfiles))
+        lf.close()
+        list_path = lf.name
+        proc = subprocess.run(
+            ["ffmpeg", "-f", "concat", "-safe", "0", "-i", list_path,
+             "-c", "copy", "-f", "ogg", "pipe:1", "-loglevel", "error"],
+            capture_output=True, timeout=60,
+        )
+        if proc.returncode != 0 or not proc.stdout:
+            return None
+        return proc.stdout
+    except Exception:
+        return None
+    finally:
+        for p in tmpfiles:
+            try:
+                os.unlink(p)
+            except OSError:
+                pass
+        if list_path:
+            try:
+                os.unlink(list_path)
+            except OSError:
+                pass
 
-    Один поток — голосовые уходят строго в порядке постановки. deliver=False
-    (прогрев) — синтез выполняется, результат отбрасывается.
+
+class TTSWorker:
+    """Фоновый TTS-конвейер: очередь реплик → synth → накопление за раунд → send.
+
+    deliver=False (прогрев) — синтез без накопления.
+    end_round() → ставит в очередь флаш: склеить накопленные OGG → send одним файлом.
     """
+
+    _FLUSH = object()  # sentinel для конца раунда
 
     def __init__(self, synth, send):
         self._synth = synth   # (text, key) -> bytes | None
@@ -113,6 +158,10 @@ class TTSWorker:
     def put(self, text: str, key: str, deliver: bool = True) -> None:
         self._q.put((text, key, deliver))
 
+    def end_round(self) -> None:
+        """Сигнал конца раунда: склеить накопленные OGG и отправить одним файлом."""
+        self._q.put(self._FLUSH)
+
     def close(self) -> None:
         """Дослать sentinel; поток завершится, доработав очередь."""
         self._q.put(None)
@@ -121,11 +170,19 @@ class TTSWorker:
         self._thread.join(timeout)
 
     def _run(self) -> None:
+        buf: list[bytes] = []
         while True:
             item = self._q.get()
             if item is None:
                 return
+            if item is self._FLUSH:
+                if buf:
+                    combined = concat_ogg(buf)
+                    if combined:
+                        self._send(combined)
+                    buf = []
+                continue
             text, key, deliver = item
             ogg = self._synth(text, key)
             if ogg and deliver:
-                self._send(ogg)
+                buf.append(ogg)

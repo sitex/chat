@@ -224,6 +224,8 @@ def _table_reader(chat: int, proc: subprocess.Popen,
             _table_say(chat, f"⚠️ {ev['name']}: реплика выпала")
         elif kind == "round_done":
             rnd = ev["round"]
+            if worker:
+                worker.end_round()
             if rnd < auto_rounds:
                 # автопродолжение — пишем MORE прямо в stdin
                 try:
