@@ -8,6 +8,10 @@
 - `scripts/table_tts.py`: убран `stop_periods` из ffmpeg `silenceremove` — резал речь при per-sentence паузах (#24).
 - `tts_service_higgs.py` (podcastify): `_trim_silence` windowed RMS — убирает 2с модельного пролога GGUF из каждого предложения перед конкатенацией (#24).
 
+### Added
+- `scripts/table_bot.py`: `TABLE_ROUNDS` — авто-продолжение N раундов подряд без кнопки; дефолт 1 (#25).
+
+
 ## [0.1.8] — 2026-07-10
 
 ### Added
