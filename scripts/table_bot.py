@@ -251,11 +251,28 @@ def _table_reader(chat: int, proc: subprocess.Popen,
 
 # ── обработка обновлений ─────────────────────────────────────────────────────
 
-HELP = ("🎙 Бот круглого стола персон.\n\n"
-        "/table <тема> — запустить стол (все 11 участников)\n"
-        "/table 1,3,5: <тема> — стол выбранных участников (номера 1–11)\n"
-        "/stop — завершить стол\n"
-        "Обычный текст при активном столе — реплика Ведущего.")
+PERSONAS_LIST = (
+    "1. Patrick Jane — @mentalist_jane_bot\n"
+    "2. Ачарья Дас — @acharya_das_gita_bot\n"
+    "3. Dan — @dan_sigma_bot\n"
+    "4. Мария — @maria_socialself_bot\n"
+    "5. Шри Вишванатх — @sri_vishwanath_bot\n"
+    "6. Marni — @marni_kinrys_bot\n"
+    "7. Ричард Шварц — @ifs_course_bot\n"
+    "8. Luke Hawkins — @luke_hawkins_bot\n"
+    "9. Lee Jacobs — @unwritten_system_bot\n"
+    "10. Edward Mannix — @mannix_clearing_bot\n"
+    "11. David Key — @david_key_bot"
+)
+
+HELP = (
+    "🎙 Бот круглого стола персон.\n\n"
+    "/table <тема> — запустить стол (все 11 участников)\n"
+    "/table 1,3,5: <тема> — стол выбранных участников (номера 1–11)\n"
+    "/personas — список участников с их ботами\n"
+    "/stop — завершить стол\n"
+    "Обычный текст при активном столе — реплика Ведущего."
+)
 
 
 def handle(update: dict) -> None:
@@ -286,6 +303,11 @@ def handle(update: dict) -> None:
         return
     text = (msg.get("text") or "").strip()
     if not text:
+        return
+    if text in ("/personas", "/start"):
+        api("sendMessage", chat_id=chat,
+            text="Участники круглого стола:\n\n" + PERSONAS_LIST +
+                 "\n\nЧтобы выбрать, используй /table 1,3,5: <тема>")
         return
     if text.startswith("/table"):
         rest = text[len("/table"):].strip()
@@ -330,8 +352,9 @@ def load_offset() -> int:
 def main() -> None:
     api("deleteWebhook")
     api("setMyCommands", commands=[
-        {"command": "table", "description": "Запустить круглый стол — /table <тема>"},
-        {"command": "stop",  "description": "Завершить текущий стол"},
+        {"command": "table",    "description": "Запустить круглый стол — /table <тема>"},
+        {"command": "personas", "description": "Список участников с их ботами (1–11)"},
+        {"command": "stop",     "description": "Завершить текущий стол"},
     ])
     if not OFFSET_FILE.exists():  # первый старт — пропустить бэклог
         drained = api("getUpdates", offset=-1, timeout=0)
