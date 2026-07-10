@@ -234,6 +234,8 @@ def _table_reader(chat: int, proc: subprocess.Popen,
                 except OSError:
                     pass
             else:
+                if worker:
+                    worker.send_all()  # весь диалог одним OGG
                 _table_say(chat, f"Круг {rnd} завершён. Ещё круг, "
                                  f"реплика Ведущего текстом — или завершаем?",
                            reply_markup=_TABLE_KB)

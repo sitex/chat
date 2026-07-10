@@ -1,6 +1,7 @@
 """Озвучка реплик круглого стола через OmniVoice (туннель 127.0.0.1:8902)."""
 from __future__ import annotations
 
+import concurrent.futures
 import os
 import queue
 import re
@@ -39,6 +40,10 @@ _EMOJI_RE = re.compile(
     flags=re.UNICODE,
 )
 _NUM_RE = re.compile(r"№\s*(\d+)")
+_SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
+
+# Сколько предложений от реплики озвучивать (0 = без ограничений).
+TTS_MAX_SENTENCES = 3
 
 
 def clean_for_tts(text: str) -> str:
@@ -64,6 +69,11 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
     if not speaker:
         return None
     cleaned = clean_for_tts(text)
+    if not cleaned:
+        return None
+    if TTS_MAX_SENTENCES:
+        parts = _SENT_SPLIT.split(cleaned)
+        cleaned = " ".join(parts[:TTS_MAX_SENTENCES])
     if not cleaned:
         return None
     try:
@@ -140,17 +150,20 @@ def concat_ogg(oggs: list[bytes]) -> bytes | None:
 
 
 class TTSWorker:
-    """Фоновый TTS-конвейер: очередь реплик → synth → накопление за раунд → send.
+    """Фоновый TTS-конвейер: очередь реплик → параллельный synth → накопление → send.
 
-    deliver=False (прогрев) — синтез без накопления.
-    end_round() → ставит в очередь флаш: склеить накопленные OGG → send одним файлом.
+    deliver=False (прогрев) — synth вызывается немедленно, результат отброшен.
+    end_round() — синтезирует реплики раунда параллельно, добавляет OGG в общий буфер.
+    send_all()  — склеивает накопленные раунды в один файл и шлёт; сбрасывает буфер.
     """
 
-    _FLUSH = object()  # sentinel для конца раунда
+    _FLUSH = object()  # конец раунда: синтез + накопление
+    _SEND  = object()  # отправить всё накопленное одним файлом
 
-    def __init__(self, synth, send):
-        self._synth = synth   # (text, key) -> bytes | None
-        self._send = send     # (ogg: bytes) -> None
+    def __init__(self, synth, send, max_workers: int = 4):
+        self._synth = synth       # (text, key) -> bytes | None
+        self._send = send         # (ogg: bytes) -> None
+        self._max_workers = max_workers
         self._q: queue.Queue = queue.Queue()
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -159,30 +172,59 @@ class TTSWorker:
         self._q.put((text, key, deliver))
 
     def end_round(self) -> None:
-        """Сигнал конца раунда: склеить накопленные OGG и отправить одним файлом."""
+        """Сигнал конца раунда: синтез реплик параллельно, OGG → буфер раундов."""
         self._q.put(self._FLUSH)
 
+    def send_all(self) -> None:
+        """Склеить все накопленные раунды в один OGG и отправить."""
+        self._q.put(self._SEND)
+
     def close(self) -> None:
-        """Дослать sentinel; поток завершится, доработав очередь."""
+        """Дослать None-sentinel; поток завершится, доработав очередь."""
         self._q.put(None)
 
     def join(self, timeout: float | None = None) -> None:
         self._thread.join(timeout)
 
+    def _synth_parallel(self, items: list[tuple[str, str]]) -> list[bytes]:
+        """Синтез всех реплик параллельно; возвращает OGG в исходном порядке."""
+        n = len(items)
+        results: list[bytes | None] = [None] * n
+        workers = min(n, self._max_workers)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(self._synth, t, k): i for i, (t, k) in enumerate(items)}
+            for fut in concurrent.futures.as_completed(futs):
+                try:
+                    results[futs[fut]] = fut.result()
+                except Exception:
+                    pass
+        return [r for r in results if r]
+
     def _run(self) -> None:
-        buf: list[bytes] = []
+        pending: list[tuple[str, str]] = []  # реплики текущего раунда
+        combined: list[bytes] = []           # OGG-ы завершённых раундов
         while True:
             item = self._q.get()
             if item is None:
                 return
             if item is self._FLUSH:
-                if buf:
-                    combined = concat_ogg(buf)
-                    if combined:
-                        self._send(combined)
-                    buf = []
+                if pending:
+                    oggs = self._synth_parallel(pending)
+                    pending = []
+                    if oggs:
+                        ogg = concat_ogg(oggs)
+                        if ogg:
+                            combined.append(ogg)
+                continue
+            if item is self._SEND:
+                if combined:
+                    final = concat_ogg(combined)
+                    if final:
+                        self._send(final)
+                    combined = []
                 continue
             text, key, deliver = item
-            ogg = self._synth(text, key)
-            if ogg and deliver:
-                buf.append(ogg)
+            if deliver:
+                pending.append((text, key))
+            else:
+                self._synth(text, key)  # прогрев: результат отброшен

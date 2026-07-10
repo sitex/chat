@@ -181,6 +181,19 @@ def test_synthesize_ogg_markdown_cleaned_before_send():
         assert "жирный текст" in call_json["text"]
 
 
+def test_synthesize_ogg_text_truncated_to_max_sentences():
+    """Длинный текст усекается до TTS_MAX_SENTENCES предложений."""
+    long_text = "Первое. Второе. Третье. Четвёртое. Пятое."
+    with patch("table_tts.httpx.post", return_value=_make_http_ok()) as mhttp, \
+         patch("table_tts.subprocess.run", return_value=_make_ffmpeg_ok()):
+        table_tts.synthesize_ogg(long_text, "sigma", "http://x", "tok")
+        call_json = mhttp.call_args.kwargs.get("json") or mhttp.call_args[1].get("json", {})
+        sent = call_json["text"]
+        assert "Первое" in sent
+        assert "Четвёртое" not in sent
+        assert "Пятое" not in sent
+
+
 # ── concat_ogg ───────────────────────────────────────────────────────────────
 
 
@@ -226,28 +239,29 @@ def _collect_send() -> tuple[list, callable]:
 
 
 def test_tts_worker_end_round_sends_combined():
-    """put x3 + end_round → send вызван один раз (concat)."""
+    """put x3 + end_round + send_all → send вызван один раз со всеми тремя."""
     received, send = _collect_send()
 
     def synth(text: str, key: str) -> bytes:
         return text.encode()
 
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)) as mc:
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("А", "sigma")
         w.put("Б", "sigma")
         w.put("В", "sigma")
         w.end_round()
+        w.send_all()
         w.close()
         w.join(timeout=5)
     assert len(received) == 1
-    mc.assert_called_once()
-    args = mc.call_args[0][0]
-    assert args == [b"\xd0\x90", b"\xd0\x91", b"\xd0\x92"]
+    assert b"\xd0\x90" in received[0]  # А
+    assert b"\xd0\x91" in received[0]  # Б
+    assert b"\xd0\x92" in received[0]  # В
 
 
-def test_tts_worker_two_rounds_two_sends():
-    """Два end_round → два send-вызова."""
+def test_tts_worker_two_rounds_one_combined_send():
+    """Два end_round + send_all → один send со всеми раундами."""
     received, send = _collect_send()
 
     def synth(text: str, key: str) -> bytes:
@@ -259,13 +273,38 @@ def test_tts_worker_two_rounds_two_sends():
         w.end_round()
         w.put("Р2А", "sigma")
         w.end_round()
+        w.send_all()
+        w.close()
+        w.join(timeout=5)
+    assert len(received) == 1
+    assert "Р1А".encode() in received[0]
+    assert "Р2А".encode() in received[0]
+
+
+def test_tts_worker_send_all_resets_buffer():
+    """После send_all следующие раунды накапливаются заново."""
+    received, send = _collect_send()
+
+    def synth(text: str, key: str) -> bytes:
+        return text.encode()
+
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("С1", "sigma")
+        w.end_round()
+        w.send_all()      # первый send
+        w.put("С2", "sigma")
+        w.end_round()
+        w.send_all()      # второй send
         w.close()
         w.join(timeout=5)
     assert len(received) == 2
+    assert "С1".encode() in received[0]
+    assert "С2".encode() in received[1]
 
 
 def test_tts_worker_deliver_false_not_accumulated():
-    """deliver=False (прогрев): synth вызван, в буфер не попадает."""
+    """deliver=False (прогрев): synth вызван немедленно, в буфер не попадает."""
     synth_calls: list = []
 
     def synth(text: str, key: str) -> bytes:
@@ -277,6 +316,7 @@ def test_tts_worker_deliver_false_not_accumulated():
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("прогрев", "mentalist", deliver=False)
         w.end_round()
+        w.send_all()
         w.close()
         w.join(timeout=5)
     assert synth_calls == ["прогрев"]
@@ -297,6 +337,7 @@ def test_tts_worker_synth_none_skipped_in_round():
         w.put("пустой", "sigma")
         w.put("живой", "sigma")
         w.end_round()
+        w.send_all()
         w.close()
         w.join(timeout=5)
     assert call_count[0] == 2
@@ -304,11 +345,27 @@ def test_tts_worker_synth_none_skipped_in_round():
 
 
 def test_tts_worker_close_without_end_round_no_send():
-    """close() без end_round — накопленные OGG отбрасываются, send не вызван."""
+    """close() без end_round/send_all — ничего не отправляется."""
     received, send = _collect_send()
     w = table_tts.TTSWorker(synth=_slow_synth(0.01), send=send)
     for i in range(3):
         w.put(str(i), "sigma")
     w.close()
     w.join(timeout=5)
+    assert received == []
+
+
+def test_tts_worker_end_round_without_send_all_no_send():
+    """end_round без send_all — OGG накоплен, но не отправлен."""
+    received, send = _collect_send()
+
+    def synth(text: str, key: str) -> bytes:
+        return text.encode()
+
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+        w = table_tts.TTSWorker(synth=synth, send=send)
+        w.put("Текст", "sigma")
+        w.end_round()
+        w.close()
+        w.join(timeout=5)
     assert received == []
