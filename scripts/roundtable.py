@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import queue
 import re
 import sys
@@ -81,6 +82,10 @@ DEFAULT_TOPIC = "Судьба предопределена, или мы сами
 HOST_NAME = "Ведущий"
 STDIN_TIMEOUT = 600  # сек тишины в --interactive до автозавершения
 CONTEXT_LIMIT = 26   # сколько последних реплик персона видит в транскрипте
+
+# Бэкенд LLM-режиссёра (выбор следующего оратора). Пусто → общий бэкенд.
+# Режиссёр — не персона: инжект промпта Claude Code на cliproxy не вредит.
+DIRECTOR_BACKEND = os.environ.get("DIRECTOR_BACKEND", "")
 
 JSONL = False
 
@@ -234,7 +239,11 @@ async def pick_next(
     lines.append("")
     lines.append("Кто отвечает следующим? Только номер.")
     try:
-        out = await llm.generate(DIRECTOR_PROMPT, [{"role": "user", "content": "\n".join(lines)}])
+        out = await llm.generate(
+            DIRECTOR_PROMPT,
+            [{"role": "user", "content": "\n".join(lines)}],
+            backend=DIRECTOR_BACKEND or None,
+        )
         m = re.search(r"\d+", out)
         if m:
             num = int(m.group())

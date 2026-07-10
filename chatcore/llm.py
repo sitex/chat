@@ -300,15 +300,20 @@ async def _cascade(backend: str, system: str, messages: list[dict], deadline: fl
     return await _attempt(_ollama, system, messages, deadline)
 
 
-async def generate(system: str, messages: list[dict]) -> str:
+async def generate(
+    system: str, messages: list[dict], backend: str | None = None
+) -> str:
     """messages: [{'role':'user'|'assistant','content':str}, ...].
+
+    backend — явный override бэкенда (для служебных вызовов вроде
+    режиссёра стола); None → _resolve_backend() как раньше.
 
     Гарантированно завершается не позже LLM_OVERALL_TIMEOUT секунд — иначе
     обработчик сообщения мог бы зависнуть навсегда и бот молчал бы на текст.
     При истечении дедлайна/ошибке поднимается исключение, которое ловит
     on_message и шлёт пользователю человекочитаемый фолбэк.
     """
-    backend = _resolve_backend()
+    backend = backend or _resolve_backend()
     t0 = time.monotonic()
     deadline = t0 + LLM_OVERALL_TIMEOUT
     try:

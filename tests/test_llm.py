@@ -99,6 +99,31 @@ def test_resolve_backend_explicit(monkeypatch):
     assert llm._resolve_backend() == "ollama"
 
 
+@pytest.mark.asyncio
+async def test_generate_backend_override(monkeypatch):
+    """generate(backend=...) уважает override, игнорируя LLM_BACKEND."""
+    monkeypatch.setenv("LLM_BACKEND", "claude-cli")  # общий бэкенд другой
+
+    async def _sentinel_claude_cli(*_a, **_k):
+        pytest.fail("_claude_cli не должен вызываться при backend='ollama'")
+
+    monkeypatch.setattr(llm, "_claude_cli", _sentinel_claude_cli)
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.generate("sys", MSGS, backend="ollama")
+    assert out == "fallback reply"
+
+
+@pytest.mark.asyncio
+async def test_generate_backend_default_unchanged(monkeypatch):
+    """generate() без backend работает через _resolve_backend() как раньше."""
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.generate("sys", MSGS)
+    assert out == "fallback reply"
+
+
 def test_flatten_messages_uses_config_labels():
     """_flatten_messages берёт метки из chatcore.config."""
     from chatcore import config

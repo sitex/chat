@@ -10,6 +10,11 @@
     BOT_TOKEN=123456:ABC-...
     ALLOW_FROM=343350188            # id через запятую
     CLAUDE_CLI_BIN=/usr/bin/claude  # опционально
+    CLIPROXY_BASE_URL=http://...:8317   # опционально (режиссёр стола)
+    CLIPROXY_API_KEY=...
+    CLIPROXY_MODEL=claude-sonnet-4-6
+    DIRECTOR_BACKEND=cliproxy       # опционально; дефолт: cliproxy при
+                                    # заданных CLIPROXY_API_KEY+MODEL
 
 Запуск — systemd --user юнит scripts/systemd/table-bot.service.
 """
@@ -124,6 +129,17 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
                    CLAUDE_CLI_BIN=CLAUDE_CLI_BIN,
                    CLAUDE_CLI_TIMEOUT="90",
                    LLM_OVERALL_TIMEOUT="120")
+        # cliproxy-креды и бэкенд режиссёра — из ~/.table-bot.env
+        for k in ("CLIPROXY_BASE_URL", "CLIPROXY_API_KEY", "CLIPROXY_MODEL"):
+            if CONF.get(k):
+                env[k] = CONF[k]
+        director = CONF.get(
+            "DIRECTOR_BACKEND",
+            "cliproxy"
+            if CONF.get("CLIPROXY_API_KEY") and CONF.get("CLIPROXY_MODEL")
+            else "")
+        if director:
+            env["DIRECTOR_BACKEND"] = director
         proc = subprocess.Popen(
             [sys.executable, str(ROUNDTABLE_SCRIPT), "--jsonl", "--interactive",
              "--topic", topic]
