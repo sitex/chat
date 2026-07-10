@@ -25,8 +25,6 @@ VOICE_BY_KEY: dict[str, str] = {
 
 # Markdown/emoji-мусор, который плохо читается вслух
 _MD_RE = re.compile(r"[*_`~]")
-_SENTENCE_END_RE = re.compile(r"([.!?…])\s+")
-_ELLIPSIS_RE = re.compile(r"\.\.\.")
 _EMOJI_RE = re.compile(
     "["
     "\U0001F600-\U0001F64F"
@@ -44,19 +42,9 @@ _NUM_RE = re.compile(r"№\s*(\d+)")
 def clean_for_tts(text: str) -> str:
     """Markdown-звёздочки, подчёркивания, эмодзи, «№3» → «номер 3» и т.п."""
     text = _MD_RE.sub("", text)
-    text = _ELLIPSIS_RE.sub("…", text)   # «...» → единый символ (не дробит предложение)
     text = _EMOJI_RE.sub("", text)
     text = _NUM_RE.sub(r"номер \1", text)
     return text.strip()
-
-
-def _add_sentence_breaks(text: str, silence_ms: int = 150) -> str:
-    """Вставляет sil<[ms]> на границах предложений для посегментного синтеза.
-
-    tts_service_higgs.py (_split_on_silence) синтезирует каждый сегмент
-    отдельно — короткие чанки модель теряет реже.
-    """
-    return _SENTENCE_END_RE.sub(rf"\1 sil<[{silence_ms}]> ", text)
 
 
 def healthz(url: str, timeout: float = 5) -> bool:
@@ -73,7 +61,7 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
     speaker = VOICE_BY_KEY.get(key)
     if not speaker:
         return None
-    cleaned = _add_sentence_breaks(clean_for_tts(text))
+    cleaned = clean_for_tts(text)
     if not cleaned:
         return None
     try:
