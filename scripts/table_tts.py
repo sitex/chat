@@ -43,7 +43,8 @@ _NUM_RE = re.compile(r"№\s*(\d+)")
 _SENT_SPLIT = re.compile(r"(?<=[.!?…])\s+")
 
 # Сколько предложений от реплики озвучивать (0 = без ограничений).
-TTS_MAX_SENTENCES = 3
+# Длину реплики лучше контролировать через TABLE_LLM_MAX_TOKENS в .table-bot.env.
+TTS_MAX_SENTENCES = 0
 
 
 def clean_for_tts(text: str) -> str:

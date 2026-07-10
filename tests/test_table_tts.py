@@ -181,17 +181,19 @@ def test_synthesize_ogg_markdown_cleaned_before_send():
         assert "жирный текст" in call_json["text"]
 
 
-def test_synthesize_ogg_text_truncated_to_max_sentences():
-    """Длинный текст усекается до TTS_MAX_SENTENCES предложений."""
+def test_synthesize_ogg_full_text_when_max_sentences_zero():
+    """TTS_MAX_SENTENCES=0 — полный текст уходит на сервис без усечения."""
     long_text = "Первое. Второе. Третье. Четвёртое. Пятое."
-    with patch("table_tts.httpx.post", return_value=_make_http_ok()) as mhttp, \
-         patch("table_tts.subprocess.run", return_value=_make_ffmpeg_ok()):
-        table_tts.synthesize_ogg(long_text, "sigma", "http://x", "tok")
-        call_json = mhttp.call_args.kwargs.get("json") or mhttp.call_args[1].get("json", {})
-        sent = call_json["text"]
-        assert "Первое" in sent
-        assert "Четвёртое" not in sent
-        assert "Пятое" not in sent
+    orig = table_tts.TTS_MAX_SENTENCES
+    table_tts.TTS_MAX_SENTENCES = 0
+    try:
+        with patch("table_tts.httpx.post", return_value=_make_http_ok()) as mhttp, \
+             patch("table_tts.subprocess.run", return_value=_make_ffmpeg_ok()):
+            table_tts.synthesize_ogg(long_text, "sigma", "http://x", "tok")
+            call_json = mhttp.call_args.kwargs.get("json") or mhttp.call_args[1].get("json", {})
+            assert "Пятое" in call_json["text"]
+    finally:
+        table_tts.TTS_MAX_SENTENCES = orig
 
 
 # ── concat_ogg ───────────────────────────────────────────────────────────────
