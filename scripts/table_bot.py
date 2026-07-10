@@ -329,6 +329,10 @@ def load_offset() -> int:
 
 def main() -> None:
     api("deleteWebhook")
+    api("setMyCommands", commands=[
+        {"command": "table", "description": "Запустить круглый стол — /table <тема>"},
+        {"command": "stop",  "description": "Завершить текущий стол"},
+    ])
     if not OFFSET_FILE.exists():  # первый старт — пропустить бэклог
         drained = api("getUpdates", offset=-1, timeout=0)
         ups = drained.get("result", []) if drained.get("ok") else []
