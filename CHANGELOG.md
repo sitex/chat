@@ -1,5 +1,13 @@
 # Changelog — chatcore (sitex/chat)
 
+## [Unreleased] — 2026-07-10
+
+### Fixed (Infrastructure)
+- `podcastify-higgs-backend.service` (sglang-omni) отключён из автозапуска — занимал 13 ГБ VRAM и блокировал GGUF-режим TTS (#24).
+- TTS сервис восстановлен в GGUF-режиме после зависания sglang-процесса.
+- `scripts/table_tts.py`: убран `stop_periods` из ffmpeg `silenceremove` — резал речь при per-sentence паузах (#24).
+- `tts_service_higgs.py` (podcastify): `_trim_silence` windowed RMS — убирает 2с модельного пролога GGUF из каждого предложения перед конкатенацией (#24).
+
 ## [0.1.8] — 2026-07-10
 
 ### Added
