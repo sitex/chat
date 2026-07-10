@@ -10,6 +10,13 @@
     BOT_TOKEN=123456:ABC-...
     ALLOW_FROM=343350188            # id через запятую
     CLAUDE_CLI_BIN=/usr/bin/claude  # опционально
+    CLIPROXY_BASE_URL=http://...:8317   # опционально (режиссёр + реплики стола)
+    CLIPROXY_API_KEY=...
+    CLIPROXY_MODEL=claude-sonnet-4-6
+    DIRECTOR_BACKEND=cliproxy       # опционально; дефолт: cliproxy при
+                                    # заданных CLIPROXY_API_KEY+MODEL
+    TABLE_LLM_BACKEND=cliproxy      # опционально; дефолт: claude-cli
+    TABLE_LLM_MAX_TOKENS=250        # опционально; дефолт: 250
 
 Запуск — systemd --user юнит scripts/systemd/table-bot.service.
 """
@@ -120,10 +127,22 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
                 text="Стол уже идёт. /stop — завершить его сначала.")
             return
         env = dict(os.environ,
-                   LLM_BACKEND="claude-cli",
+                   LLM_BACKEND=CONF.get("TABLE_LLM_BACKEND", "claude-cli"),
                    CLAUDE_CLI_BIN=CLAUDE_CLI_BIN,
                    CLAUDE_CLI_TIMEOUT="90",
-                   LLM_OVERALL_TIMEOUT="120")
+                   LLM_OVERALL_TIMEOUT="120",
+                   LLM_MAX_TOKENS=CONF.get("TABLE_LLM_MAX_TOKENS", "250"))
+        # cliproxy-креды и бэкенд режиссёра — из ~/.table-bot.env
+        for k in ("CLIPROXY_BASE_URL", "CLIPROXY_API_KEY", "CLIPROXY_MODEL"):
+            if CONF.get(k):
+                env[k] = CONF[k]
+        director = CONF.get(
+            "DIRECTOR_BACKEND",
+            "cliproxy"
+            if CONF.get("CLIPROXY_API_KEY") and CONF.get("CLIPROXY_MODEL")
+            else "")
+        if director:
+            env["DIRECTOR_BACKEND"] = director
         proc = subprocess.Popen(
             [sys.executable, str(ROUNDTABLE_SCRIPT), "--jsonl", "--interactive",
              "--topic", topic]
@@ -133,7 +152,17 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
             stderr=subprocess.DEVNULL,
         )
         tts_ok = bool(TTS_TOKEN) and table_tts.healthz(TTS_URL)
-        th = threading.Thread(target=_table_reader, args=(chat, proc), daemon=True)
+        worker = None
+        if tts_ok:
+            worker = table_tts.TTSWorker(
+                synth=lambda text, key: table_tts.synthesize_ogg(
+                    text, key, TTS_URL, TTS_TOKEN),
+                send=lambda ogg: api_voice(chat, ogg),
+            )
+            # Прогрев холодной TTS-модели, пока генерится первая реплика.
+            worker.put("Начинаем круглый стол.", "mentalist", deliver=False)
+        th = threading.Thread(target=_table_reader,
+                              args=(chat, proc, worker), daemon=True)
         _table = {"chat": chat, "proc": proc, "thread": th, "tts": tts_ok}
         th.start()
 
@@ -168,7 +197,8 @@ def _table_say(chat: int, text: str, reply_markup: dict | None = None) -> None:
         api("sendMessage", chat_id=chat, text=text, reply_markup=reply_markup)
 
 
-def _table_reader(chat: int, proc: subprocess.Popen) -> None:
+def _table_reader(chat: int, proc: subprocess.Popen,
+                  worker: table_tts.TTSWorker | None = None) -> None:
     global _table
     for line in proc.stdout:
         try:
@@ -183,10 +213,8 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
                              f"Участники:\n{names}\n\nПервый круг…")
         elif kind == "reply":
             _table_say(chat, f"*{ev['name']}:* {ev['text']}")
-            if _table and _table.get("tts") and ev.get("key"):
-                ogg = table_tts.synthesize_ogg(ev["text"], ev["key"], TTS_URL, TTS_TOKEN)
-                if ogg:
-                    api_voice(chat, ogg)
+            if worker and ev.get("key"):
+                worker.put(ev["text"], ev["key"])
         elif kind == "error":
             _table_say(chat, f"⚠️ {ev['name']}: реплика выпала")
         elif kind == "round_done":
@@ -196,6 +224,8 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
         elif kind == "done":
             _table_say(chat, f"🏁 Стол закрыт ({ev['replies']} реплик).")
     proc.wait()
+    if worker:
+        worker.close()
     with _table_lock:
         if _table is not None and _table["proc"] is proc:
             _table = None

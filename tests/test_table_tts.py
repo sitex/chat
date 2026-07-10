@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+import time as _time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -178,3 +179,79 @@ def test_synthesize_ogg_markdown_cleaned_before_send():
         call_json = mhttp.call_args.kwargs.get("json") or mhttp.call_args[1].get("json", {})
         assert "*" not in call_json["text"]
         assert "жирный текст" in call_json["text"]
+
+
+# ── TTSWorker ─────────────────────────────────────────────────────────────────
+
+
+def _slow_synth(delay: float = 0.05):
+    """Фейковый synth с задержкой — для проверки порядка."""
+    def synth(text: str, key: str) -> bytes:
+        _time.sleep(delay)
+        return text.encode()
+    return synth
+
+
+def _collect_send() -> tuple[list, callable]:
+    received: list = []
+    def send(ogg: bytes) -> None:
+        received.append(ogg)
+    return received, send
+
+
+def test_tts_worker_delivers_in_order():
+    """Три put с медленным synth → send получает байты в порядке постановки."""
+    received, send = _collect_send()
+    w = table_tts.TTSWorker(synth=_slow_synth(0.02), send=send)
+    w.put("А", "sigma")
+    w.put("Б", "sigma")
+    w.put("В", "sigma")
+    w.close()
+    w.join(timeout=5)
+    assert received == [b"\xd0\x90", b"\xd0\x91", b"\xd0\x92"]
+
+
+def test_tts_worker_deliver_false_synth_called_send_not():
+    """deliver=False: synth вызван (прогрев), send — нет."""
+    synth_calls: list = []
+
+    def synth(text: str, key: str) -> bytes:
+        synth_calls.append(text)
+        return text.encode()
+
+    received, send = _collect_send()
+    w = table_tts.TTSWorker(synth=synth, send=send)
+    w.put("прогрев", "mentalist", deliver=False)
+    w.close()
+    w.join(timeout=5)
+    assert synth_calls == ["прогрев"]
+    assert received == []
+
+
+def test_tts_worker_synth_none_skips_send_worker_lives():
+    """synth → None: send не вызван, воркер жив — следующий item доставлен."""
+    call_count = [0]
+
+    def synth(text: str, key: str):
+        call_count[0] += 1
+        return None if text == "пустой" else text.encode()
+
+    received, send = _collect_send()
+    w = table_tts.TTSWorker(synth=synth, send=send)
+    w.put("пустой", "sigma")
+    w.put("живой", "sigma")
+    w.close()
+    w.join(timeout=5)
+    assert call_count[0] == 2
+    assert received == [b"\xd0\xb6\xd0\xb8\xd0\xb2\xd0\xbe\xd0\xb9"]
+
+
+def test_tts_worker_close_drains_queue():
+    """close(): хвост очереди дорабатывается до sentinel."""
+    received, send = _collect_send()
+    w = table_tts.TTSWorker(synth=_slow_synth(0.01), send=send)
+    for i in range(5):
+        w.put(str(i), "sigma")
+    w.close()
+    w.join(timeout=10)
+    assert len(received) == 5
