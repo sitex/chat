@@ -82,7 +82,8 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
     try:
         proc = subprocess.run(
             ["ffmpeg", "-i", "pipe:0",
-             "-af", "silenceremove=stop_periods=-1:stop_duration=0.3:stop_threshold=-50dB",
+             "-af", "silenceremove=start_periods=1:start_duration=0.1:start_threshold=-50dB"
+                    ":stop_periods=1:stop_duration=0.3:stop_threshold=-50dB",
              "-c:a", "libopus", "-b:a", "32k", "-f", "ogg", "pipe:1",
              "-loglevel", "error"],
             input=wav_bytes,
