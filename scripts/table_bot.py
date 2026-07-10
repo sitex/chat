@@ -152,7 +152,17 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
             stderr=subprocess.DEVNULL,
         )
         tts_ok = bool(TTS_TOKEN) and table_tts.healthz(TTS_URL)
-        th = threading.Thread(target=_table_reader, args=(chat, proc), daemon=True)
+        worker = None
+        if tts_ok:
+            worker = table_tts.TTSWorker(
+                synth=lambda text, key: table_tts.synthesize_ogg(
+                    text, key, TTS_URL, TTS_TOKEN),
+                send=lambda ogg: api_voice(chat, ogg),
+            )
+            # Прогрев холодной TTS-модели, пока генерится первая реплика.
+            worker.put("Начинаем круглый стол.", "mentalist", deliver=False)
+        th = threading.Thread(target=_table_reader,
+                              args=(chat, proc, worker), daemon=True)
         _table = {"chat": chat, "proc": proc, "thread": th, "tts": tts_ok}
         th.start()
 
@@ -187,7 +197,8 @@ def _table_say(chat: int, text: str, reply_markup: dict | None = None) -> None:
         api("sendMessage", chat_id=chat, text=text, reply_markup=reply_markup)
 
 
-def _table_reader(chat: int, proc: subprocess.Popen) -> None:
+def _table_reader(chat: int, proc: subprocess.Popen,
+                  worker: table_tts.TTSWorker | None = None) -> None:
     global _table
     for line in proc.stdout:
         try:
@@ -202,10 +213,8 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
                              f"Участники:\n{names}\n\nПервый круг…")
         elif kind == "reply":
             _table_say(chat, f"*{ev['name']}:* {ev['text']}")
-            if _table and _table.get("tts") and ev.get("key"):
-                ogg = table_tts.synthesize_ogg(ev["text"], ev["key"], TTS_URL, TTS_TOKEN)
-                if ogg:
-                    api_voice(chat, ogg)
+            if worker and ev.get("key"):
+                worker.put(ev["text"], ev["key"])
         elif kind == "error":
             _table_say(chat, f"⚠️ {ev['name']}: реплика выпала")
         elif kind == "round_done":
@@ -215,6 +224,8 @@ def _table_reader(chat: int, proc: subprocess.Popen) -> None:
         elif kind == "done":
             _table_say(chat, f"🏁 Стол закрыт ({ev['replies']} реплик).")
     proc.wait()
+    if worker:
+        worker.close()
     with _table_lock:
         if _table is not None and _table["proc"] is proc:
             _table = None

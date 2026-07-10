@@ -1,8 +1,10 @@
 """Озвучка реплик круглого стола через OmniVoice (туннель 127.0.0.1:8902)."""
 from __future__ import annotations
 
+import queue
 import re
 import subprocess
+import threading
 
 import httpx
 
@@ -91,3 +93,38 @@ def synthesize_ogg(text: str, key: str, url: str, token: str) -> bytes | None:
         return proc.stdout
     except Exception:
         return None
+
+
+class TTSWorker:
+    """Фоновый TTS-конвейер: очередь (text, key, deliver) → synth → send.
+
+    Один поток — голосовые уходят строго в порядке постановки. deliver=False
+    (прогрев) — синтез выполняется, результат отбрасывается.
+    """
+
+    def __init__(self, synth, send):
+        self._synth = synth   # (text, key) -> bytes | None
+        self._send = send     # (ogg: bytes) -> None
+        self._q: queue.Queue = queue.Queue()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def put(self, text: str, key: str, deliver: bool = True) -> None:
+        self._q.put((text, key, deliver))
+
+    def close(self) -> None:
+        """Дослать sentinel; поток завершится, доработав очередь."""
+        self._q.put(None)
+
+    def join(self, timeout: float | None = None) -> None:
+        self._thread.join(timeout)
+
+    def _run(self) -> None:
+        while True:
+            item = self._q.get()
+            if item is None:
+                return
+            text, key, deliver = item
+            ogg = self._synth(text, key)
+            if ogg and deliver:
+                self._send(ogg)
