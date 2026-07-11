@@ -1,5 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
+## [Unreleased] — 2026-07-11
+
+### Added
+- `tools/update_all_bot_profiles.py` — скрипт обновления `setMyDescription`/`setMyShortDescription` всех 11 ботов персон (токены берёт из `.env` соседних проектов `chat-*`).
+
 ## [Unreleased] — 2026-07-10
 
 ### Fixed (Infrastructure)
