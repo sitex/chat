@@ -63,11 +63,12 @@ _check_procs() {
     # такой счёт всегда > 1 и не является признаком дубля.
     local binary
     binary=$(echo "$exec_start" | awk '{print $1}')
+    # Пропускаем общие бинари и системные скрипты — только venv/project-пути уникальны.
     case "$binary" in
-        /usr/bin/python3|/usr/bin/python|/bin/bash|/usr/bin/bash|\
-        /home/rocky/miniconda3/bin/python3|/home/rocky/miniconda3/bin/python|\
-        /usr/bin/dbus-broker-launch|/usr/local/bin/git-sync-debounce.sh)
-            return 0  # общий интерпретатор — пропускаем
+        /home/rocky/projects/*/\.venv/*)
+            : ;;  # venv-бот — проверяем
+        *)
+            return 0  # общий интерпретатор или системный скрипт — пропускаем
             ;;
     esac
     local count

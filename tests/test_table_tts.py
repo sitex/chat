@@ -247,7 +247,7 @@ def test_tts_worker_end_round_sends_combined():
     def synth(text: str, key: str) -> bytes:
         return text.encode()
 
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("А", "sigma")
         w.put("Б", "sigma")
@@ -269,7 +269,7 @@ def test_tts_worker_two_rounds_one_combined_send():
     def synth(text: str, key: str) -> bytes:
         return text.encode()
 
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("Р1А", "sigma")
         w.end_round()
@@ -290,7 +290,7 @@ def test_tts_worker_send_all_resets_buffer():
     def synth(text: str, key: str) -> bytes:
         return text.encode()
 
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("С1", "sigma")
         w.end_round()
@@ -314,7 +314,7 @@ def test_tts_worker_deliver_false_not_accumulated():
         return text.encode()
 
     received, send = _collect_send()
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("прогрев", "mentalist", deliver=False)
         w.end_round()
@@ -334,7 +334,7 @@ def test_tts_worker_synth_none_skipped_in_round():
         return None if text == "пустой" else text.encode()
 
     received, send = _collect_send()
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("пустой", "sigma")
         w.put("живой", "sigma")
@@ -364,7 +364,7 @@ def test_tts_worker_end_round_without_send_all_no_send():
     def synth(text: str, key: str) -> bytes:
         return text.encode()
 
-    with patch("table_tts.concat_ogg", side_effect=lambda oggs: b"".join(oggs)):
+    with patch("table_tts.concat_ogg", side_effect=lambda oggs, **kw: b"".join(oggs)):
         w = table_tts.TTSWorker(synth=synth, send=send)
         w.put("Текст", "sigma")
         w.end_round()
