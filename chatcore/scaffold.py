@@ -32,6 +32,7 @@ Scaffold автоматически регистрирует хендлеры, �
 """
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 import os
@@ -61,6 +62,9 @@ from . import admin, config, data_store, llm, memory, persona, ratelimit, retrie
 log = logging.getLogger("chatcore.scaffold")
 
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "20"))
+SUMMARY_TRIGGER = int(os.environ.get("SUMMARY_TRIGGER", "12"))
+
+_bg_tasks: set[asyncio.Task] = set()
 
 # Регексы для чистки markdown-артефактов из LLM-ответов
 _MD_CLEANUP = [
@@ -356,6 +360,9 @@ class BotScaffold:
 
         rule = persona.language_rule(mode, user_lang)
 
+        memory.add(chat_id, "user", user_text)
+        summary, covered = memory.get_summary(chat_id)
+
         # RAG-контекст если retrieval настроен
         extra_ctx = None
         if retrieval.is_configured():
@@ -364,11 +371,11 @@ class BotScaffold:
                 extra_ctx = retrieval.format_context(facts)
 
         system = persona.build_system_prompt(
-            prompt_lang, reply_lang_rule=rule, extra_context=extra_ctx
+            prompt_lang, reply_lang_rule=rule, extra_context=extra_ctx,
+            conversation_summary=summary,
         )
 
-        memory.add(chat_id, "user", user_text)
-        msgs = memory.history(chat_id, HISTORY_LIMIT)
+        msgs = memory.history_after(chat_id, covered, HISTORY_LIMIT)
 
         await ctx.bot.send_chat_action(chat_id=chat_id, action=ChatAction.TYPING)
         try:
@@ -387,6 +394,9 @@ class BotScaffold:
         memory.add(chat_id, "assistant", reply)
         memory.set_last_lang(chat_id, prompt_lang)
         await update.message.reply_text(reply, reply_markup=self._reply_keyboard(prompt_lang))
+        task = asyncio.create_task(_scaffold_maybe_summarize(chat_id, prompt_lang))
+        _bg_tasks.add(task)
+        task.add_done_callback(_bg_tasks.discard)
 
     async def on_error(self, update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         """Глобальный обработчик ошибок."""
@@ -498,6 +508,24 @@ async def _check_cliproxy_token() -> None:
                     log.info("cliproxy: token OK (HTTP %s)", resp.status)
     except Exception as e:
         log.warning("cliproxy: watchdog check failed (%s)", e)
+
+
+async def _scaffold_maybe_summarize(chat_id: int, lang: str) -> None:
+    """Фоновая свёртка старой истории в rolling summary (вызывается после каждого ответа)."""
+    try:
+        summary, covered = memory.get_summary(chat_id)
+        fold = memory.pending_to_summarize(chat_id, covered, keep=HISTORY_LIMIT)
+        if len(fold) < SUMMARY_TRIGGER:
+            return
+        new_summary = await llm.summarize(summary, fold, lang)
+        if new_summary and new_summary.strip():
+            memory.set_summary(chat_id, new_summary.strip(), fold[-1]["id"])
+            log.info(
+                "summary updated chat=%s folded=%d covered_up_to=%d",
+                chat_id, len(fold), fold[-1]["id"],
+            )
+    except Exception:
+        log.exception("summarize task failed for chat=%s", chat_id)
 
 
 def run(

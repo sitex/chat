@@ -1,5 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.11] — 2026-07-12
+
+### Added
+- `chatcore/scaffold.py`: rolling summary в `on_message` — как у Jacobs. После каждого ответа фоновая задача сворачивает старые сообщения в `summaries` (SUMMARY_TRIGGER=12); в system prompt передаётся `conversation_summary`. История теперь неограничена по глубине.
+
 ## [0.1.10] — 2026-07-12
 
 ### Fixed
