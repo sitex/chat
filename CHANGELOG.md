@@ -3,6 +3,7 @@
 ## [Unreleased] — 2026-07-12
 
 ### Changed
+- `tools/update_all_bot_profiles.py`: socialself short/description обновлены под David Morin (#29). Применено через Telegram API (setMyName, setMyDescription, setMyShortDescription).
 - `scripts/roundtable.py`, `scripts/table_bot.py`: socialself-персонаж переименован Мария → David (Morin, основатель SocialSelf FFP) (#28).
 - `chat-socialself/data/persona.json`: имя, пол, identity и bio обновлены под реального автора курса.
 
