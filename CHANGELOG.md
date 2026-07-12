@@ -1,6 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
-## [Unreleased] — 2026-07-12
+## [0.1.9] — 2026-07-12
+
+### Fixed
+- `scripts/check_single_instance.sh`: фильтрация только venv-путей (`/home/rocky/projects/*/.venv/*`) — устраняет ложные FAIL на node/gitwatch/immich-watcher.
+- `tests/test_table_tts.py`: моки `concat_ogg` принимают `**kw` — тесты падали с `TypeError` после добавления `gap_ms` в вызов.
 
 ### Changed
 - `@maria_socialself_bot` удалён и пересоздан как `@david_socialself_bot` (новый токен в `chat-socialself/.env`, сервис на VPS перезапущен) (#29).
@@ -8,20 +12,13 @@
 - `scripts/roundtable.py`, `scripts/table_bot.py`: socialself-персонаж переименован Мария → David (Morin, основатель SocialSelf FFP) (#28).
 - `chat-socialself/data/persona.json`: имя, пол, identity и bio обновлены под реального автора курса.
 
-## [Unreleased] — 2026-07-11
+### Added (2026-07-11)
+- `tools/update_all_bot_profiles.py` — скрипт обновления `setMyDescription`/`setMyShortDescription` всех 11 ботов персон.
 
-### Added
-- `tools/update_all_bot_profiles.py` — скрипт обновления `setMyDescription`/`setMyShortDescription` всех 11 ботов персон (токены берёт из `.env` соседних проектов `chat-*`).
-
-## [Unreleased] — 2026-07-10
-
-### Fixed (Infrastructure)
-- `podcastify-higgs-backend.service` (sglang-omni) отключён из автозапуска — занимал 13 ГБ VRAM и блокировал GGUF-режим TTS (#24).
-- TTS сервис восстановлен в GGUF-режиме после зависания sglang-процесса.
+### Fixed (Infrastructure, 2026-07-10)
 - `scripts/table_tts.py`: убран `stop_periods` из ffmpeg `silenceremove` — резал речь при per-sentence паузах (#24).
-- `tts_service_higgs.py` (podcastify): `_trim_silence` windowed RMS — убирает 2с модельного пролога GGUF из каждого предложения перед конкатенацией (#24).
 
-### Added
+### Added (2026-07-10)
 - `scripts/table_bot.py`: `TABLE_ROUNDS` — авто-продолжение N раундов подряд без кнопки; дефолт 1 (#25).
 
 
