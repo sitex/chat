@@ -61,7 +61,7 @@ from . import admin, config, data_store, llm, memory, persona, ratelimit, retrie
 
 log = logging.getLogger("chatcore.scaffold")
 
-HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "20"))
+HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "40"))
 SUMMARY_TRIGGER = int(os.environ.get("SUMMARY_TRIGGER", "12"))
 
 _bg_tasks: set[asyncio.Task] = set()

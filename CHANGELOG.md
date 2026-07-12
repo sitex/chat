@@ -1,5 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.12] — 2026-07-12
+
+### Changed
+- `chatcore/scaffold.py`: дефолт `HISTORY_LIMIT` поднят с 20 до 40 (настраивается через `HISTORY_LIMIT` в `.env`).
+
 ## [0.1.11] — 2026-07-12
 
 ### Added
