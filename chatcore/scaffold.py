@@ -63,6 +63,7 @@ log = logging.getLogger("chatcore.scaffold")
 
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "40"))
 SUMMARY_TRIGGER = int(os.environ.get("SUMMARY_TRIGGER", "12"))
+DEFAULT_LANG = os.environ.get("DEFAULT_LANG", "").lower()  # ru | en | "" (auto)
 
 _bg_tasks: set[asyncio.Task] = set()
 
@@ -258,8 +259,8 @@ class BotScaffold:
         if u and u.language_code and u.language_code.startswith("ru"):
             return "ru"
         if u and u.language_code:
-            return "en"
-        return "ru"
+            return DEFAULT_LANG if DEFAULT_LANG in ("ru", "en") else "en"
+        return DEFAULT_LANG if DEFAULT_LANG in ("ru", "en") else "ru"
 
     # ---------- команды ----------
 

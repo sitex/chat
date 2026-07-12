@@ -1,5 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.13] — 2026-07-12
+
+### Added
+- `chatcore/scaffold.py`: `DEFAULT_LANG` env var (`ru` | `en`) — язык UI по умолчанию для ContentCommand-кнопок (цитата, учение и др.) когда `/lang` не задан и язык Telegram не совпадает с нужным.
+
 ## [0.1.12] — 2026-07-12
 
 ### Changed
