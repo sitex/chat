@@ -1,5 +1,11 @@
 # Changelog — chatcore (sitex/chat)
 
+## [Unreleased] — 2026-07-12
+
+### Changed
+- `scripts/roundtable.py`, `scripts/table_bot.py`: socialself-персонаж переименован Мария → David (Morin, основатель SocialSelf FFP) (#28).
+- `chat-socialself/data/persona.json`: имя, пол, identity и bio обновлены под реального автора курса.
+
 ## [Unreleased] — 2026-07-11
 
 ### Added
