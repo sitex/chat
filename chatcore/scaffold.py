@@ -400,8 +400,8 @@ class BotScaffold:
             self._conflict_last = now
             log.error("409 Conflict #%d: второй getUpdates с этим токеном", self._conflict_count)
             if self._conflict_count >= 5:
-                log.critical("5×409 подряд — дубль инстанса (возможно, на другой машине). Выходим.")
-                os._exit(78)
+                log.critical("5×409 подряд — дубль инстанса (возможно, на другой машине). Выходим чисто.")
+                os._exit(0)
             return
         log.exception("Unhandled error while processing update", exc_info=ctx.error)
         if isinstance(update, Update) and update.effective_message:
@@ -536,6 +536,7 @@ def run(
     llm.reload_env()
     if os.environ.get("SINGLE_INSTANCE_LOCK", "1") != "0":
         from . import singleinstance
+        singleinstance.acquire_token_pidfile(os.environ.get("BOT_TOKEN", ""))
         _lock = singleinstance.acquire(Path(str(config.get_db_path()) + ".lock"))
     logging.basicConfig(
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",

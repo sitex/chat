@@ -191,7 +191,7 @@ async def test_handle_content_cmd_missing_dataset(tmp_path):
 
 @pytest.mark.asyncio
 async def test_conflict_watchdog_triggers_on_fifth(monkeypatch):
-    """5 Conflict подряд в окне 60 с → os._exit(78)."""
+    """5 Conflict подряд в окне 60 с → os._exit(0) (чистый выход, без рестарта systemd)."""
     from types import SimpleNamespace
 
     from telegram.error import Conflict
@@ -208,7 +208,7 @@ async def test_conflict_watchdog_triggers_on_fifth(monkeypatch):
         ctx = SimpleNamespace(error=Conflict("duplicate"))
         await bot.on_error(SimpleNamespace(effective_message=None), ctx)
 
-    assert exit_calls == [78]
+    assert exit_calls == [0]
 
 
 @pytest.mark.asyncio

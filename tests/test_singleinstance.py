@@ -15,9 +15,8 @@ def test_acquire_success(tmp_path):
 
 
 def test_acquire_second_instance_fails(tmp_path):
-    """Второй процесс с тем же lock-файлом завершается с кодом 1."""
+    """Второй процесс с тем же lock-файлом завершается чисто (код 0)."""
     lock_file = tmp_path / "bot.db.lock"
-    # Держим лок в текущем процессе
     f = singleinstance.acquire(lock_file)
     try:
         result = subprocess.run(
@@ -29,7 +28,7 @@ def test_acquire_second_instance_fails(tmp_path):
             ],
             capture_output=True,
         )
-        assert result.returncode == 1
+        assert result.returncode == 0
     finally:
         f.close()
 
@@ -45,7 +44,7 @@ def test_acquire_after_release(tmp_path):
 
 
 def test_acquire_permission_error(tmp_path, monkeypatch):
-    """PermissionError при открытии → SystemExit(1) с CRITICAL-логом."""
+    """PermissionError при открытии → чистый выход (код 0) с CRITICAL-логом."""
     lock_file = tmp_path / "bot.db.lock"
 
     def _raise_permission(*_a, **_kw):
@@ -54,4 +53,4 @@ def test_acquire_permission_error(tmp_path, monkeypatch):
     monkeypatch.setattr("builtins.open", _raise_permission)
     with pytest.raises(SystemExit) as exc_info:
         singleinstance.acquire(lock_file)
-    assert exc_info.value.code == 1
+    assert exc_info.value.code == 0

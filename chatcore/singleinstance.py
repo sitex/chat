@@ -1,14 +1,19 @@
 """Защита от запуска второго инстанса бота на одной машине.
 
-Использование:
-    _lock = singleinstance.acquire(Path("bot.db.lock"))
-    # держать _lock живым до конца процесса — GC не должен закрыть файл
+Два уровня:
+  1. flock на .lock-файл рядом с БД (same-user, быстрый старт).
+  2. PID-файл в /tmp по хэшу токена (cross-user: system vs user service).
+
+При обнаружении дубля — выход кодом 0, чтобы systemd Restart=on-failure
+не создавал бесконечный цикл перезапусков.
 """
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import logging
 import os
+import sys
 from pathlib import Path
 from typing import IO
 
@@ -18,31 +23,68 @@ log = logging.getLogger("chatcore.singleinstance")
 def acquire(lock_path: Path) -> IO:
     """Взять эксклюзивный flock; вернуть открытый файл (держать до конца жизни процесса).
 
-    SystemExit(1) с CRITICAL-логом, если лок занят (второй инстанс) или файл
-    недоступен на запись (лок создан другим пользователем — признак дубля
-    system/user: следует проверить оба systemd-менеджера).
+    Если лок занят другим пользователем (PermissionError) или тем же — выход 0.
     """
     try:
         f: IO = open(lock_path, "a")
-    except PermissionError as exc:
+    except PermissionError:
         log.critical(
-            "Не удалось открыть файл лока %s: нет прав на запись. "
-            "Возможно, инстанс запущен другим пользователем (дубль system/user). "
-            "Проверьте: systemctl status <svc> и systemctl --user status <svc>",
+            "Лок %s принадлежит другому пользователю — дубль system/user. "
+            "Проверьте: systemctl status <svc> и systemctl --user status <svc>. "
+            "Выходим чисто.",
             lock_path,
         )
-        raise SystemExit(1) from exc
+        sys.exit(0)
     try:
         fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as exc:
+    except OSError:
         f.close()
         log.critical(
             "Инстанс уже запущен (лок %s занят). "
             "Проверьте оба systemd-менеджера: "
-            "systemctl status <svc> и systemctl --user status <svc>",
+            "systemctl status <svc> и systemctl --user status <svc>. "
+            "Выходим чисто.",
             lock_path,
         )
-        raise SystemExit(1) from exc
+        sys.exit(0)
     f.write(str(os.getpid()) + "\n")
     f.flush()
     return f
+
+
+def acquire_token_pidfile(bot_token: str) -> None:
+    """Cross-user защита через PID-файл в /tmp, ключ — MD5 токена.
+
+    Вызывать до старта polling. Если другой процесс (любой пользователь)
+    уже держит тот же токен — выход 0 (чистый, systemd не перезапустит).
+    """
+    if not bot_token:
+        return
+    token_hash = hashlib.md5(bot_token.encode()).hexdigest()[:12]
+    pid_path = Path(f"/tmp/chatbot-{token_hash}.pid")
+    my_pid = os.getpid()
+
+    if pid_path.exists():
+        try:
+            existing_pid = int(pid_path.read_text().strip())
+        except (ValueError, OSError):
+            existing_pid = None
+
+        if existing_pid and existing_pid != my_pid:
+            proc_exists = Path(f"/proc/{existing_pid}").exists()
+            if proc_exists:
+                log.critical(
+                    "Дубль инстанса: бот уже запущен как PID %d "
+                    "(возможно, другой пользователь). Выходим чисто.",
+                    existing_pid,
+                )
+                sys.exit(0)
+
+    try:
+        pid_path.write_text(str(my_pid))
+    except PermissionError:
+        log.critical(
+            "PID-файл %s принадлежит другому пользователю — дубль. Выходим чисто.",
+            pid_path,
+        )
+        sys.exit(0)

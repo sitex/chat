@@ -1,5 +1,11 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.10] — 2026-07-12
+
+### Fixed
+- `chatcore/singleinstance.py`: cross-user защита через PID-файл `/tmp/chatbot-{token_hash}.pid` — обнаруживает дубль system/user service до старта polling; выход кодом 0 (не SystemExit(1)) — `Restart=on-failure` не создаёт бесконечный цикл.
+- `chatcore/scaffold.py`: 5×409 Conflict → `os._exit(0)` вместо `os._exit(78)` — дублирующий инстанс завершается чисто, systemd не перезапускает его снова.
+
 ## [0.1.9] — 2026-07-12
 
 ### Fixed
