@@ -57,7 +57,7 @@ DEFAULT_PERSONAS = [
     "mentalist",      # 1. Patrick Jane — скептик, «экстрасенсов не бывает»
     "acharya-das",    # 2. Ачарья Дас — ведический учитель, карма и Гита
     "sigma",          # 3. Dan — sigma-майндсет, «ты сам создаёшь себя»
-    "socialself",     # 4. Мария — психолог по соцнавыкам
+    "socialself",     # 4. David — эксперт по соцнавыкам (SocialSelf FFP)
     "vishvanath",     # 5. Шри Вишванатх — духовный наставник
     "marni",          # 6. Marni — dating-коуч, прагматик
     "ifs",            # 7. IFS Guide — внутренние части, самолидерство

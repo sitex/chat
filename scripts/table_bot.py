@@ -255,7 +255,7 @@ PERSONAS_LIST = (
     "1. Patrick Jane — @mentalist_jane_bot\n"
     "2. Ачарья Дас — @acharya_das_gita_bot\n"
     "3. Dan — @dan_sigma_bot\n"
-    "4. Мария — @maria_socialself_bot\n"
+    "4. David — @maria_socialself_bot\n"
     "5. Шри Вишванатх — @sri_vishwanath_bot\n"
     "6. Marni — @marni_kinrys_bot\n"
     "7. Ричард Шварц — @ifs_course_bot\n"
