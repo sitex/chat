@@ -1,5 +1,10 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.14] — 2026-07-13
+
+### Fixed
+- `chatcore/llm.py`: `_grok()` теперь читает stderr и бросает `RuntimeError` при пустом stdout — cascade корректно переходит к следующему бэкенду (claude-cli/ollama) вместо возврата пустой строки. Симптом: grok возвращал 402 (balance exhausted) молча.
+
 ## [0.1.13] — 2026-07-12
 
 ### Added

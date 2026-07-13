@@ -149,11 +149,15 @@ async def _grok(system: str, messages: list[dict]) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
         await _kill_and_reap(proc)
         raise
-    return stdout.decode().strip()
+    out = stdout.decode().strip()
+    if not out:
+        err = stderr.decode(errors="replace")[:200]
+        raise RuntimeError(f"grok empty output (rc={proc.returncode}): {err}")
+    return out
 
 
 async def _claude_cli(system: str, messages: list[dict]) -> str:
