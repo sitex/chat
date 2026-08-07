@@ -1,5 +1,17 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.15] — 2026-08-07
+
+### Fixed
+- `scripts/check_single_instance.sh`: идентификация инстанса переведена с
+  «первый токен ExecStart» на триплет ExecStart+WorkingDirectory+Environment,
+  сверяемый с `/proc/<pid>/cwd` и `/proc/<pid>/environ` — устраняет ложные
+  FAIL между юнитами одного venv/интерпретатора с идентичным ExecStart
+  (podcastify-higgs-backend/tts-higgs, различались только портом в env; 7
+  chat-*-bot юнитов, различались только WorkingDirectory). `_collect()`
+  теперь фильтрует юниты по `LoadState` через `systemctl list-units`,
+  игнорируя незагруженные (#31).
+
 ## [0.1.14] — 2026-07-13
 
 ### Fixed
