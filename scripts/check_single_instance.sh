@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Аудит дублей инстансов ботов.
-# Проверяет три инварианта:
+# Проверяет четыре инварианта:
 #   1. Один ExecStart не встречается одновременно в system- и user-менеджере.
 #   2. По каждому ExecStart+WorkingDirectory+Environment запущен не более
 #      одного процесса — идентификация сверяется с реальными
@@ -9,6 +9,12 @@
 #      ExecStart различаются рабочей директорией и/или объявленными
 #      Environment=).
 #   3. В journald за последние 10 минут нет строк «409 Conflict» по этому юниту.
+#   4. Файл юнита с одним именем не лежит одновременно в директории
+#      system-юнитов и в директории user-юнитов — независимо от ExecStart и
+#      от текущего loaded-статуса (мёртвый disabled-юнит может выпасть из
+#      `systemctl list-units` после daemon-reload, но файл на диске остаётся
+#      источником путаницы: `systemctl restart X` без `--user` — не то, что
+#      можно ожидать).
 #
 # Выход: 0 = всё чисто; 1 = найден дубль.
 # Запускать от имени rocky: /proc/<pid>/{cwd,environ} читаемы только для
@@ -18,6 +24,9 @@
 set -euo pipefail
 
 FAIL=0
+
+SYSTEM_UNIT_DIR="${SYSTEM_UNIT_DIR:-/etc/systemd/system}"
+USER_UNIT_DIR="${USER_UNIT_DIR:-${HOME}/.config/systemd/user}"
 
 # ── Сбор юнитов ──────────────────────────────────────────────────────────────
 
@@ -72,8 +81,8 @@ _collect() {
     done
 }
 
-_collect /etc/systemd/system system ""
-_collect "${HOME}/.config/systemd/user" user "--user"
+_collect "$SYSTEM_UNIT_DIR" system ""
+_collect "$USER_UNIT_DIR" user "--user"
 
 # ── Инвариант 1: один ExecStart — один менеджер ──────────────────────────────
 
@@ -85,6 +94,27 @@ for name in "${!USER_EXEC[@]}"; do
             FAIL=1
         fi
     done
+done
+
+# ── Инвариант 4: имя юнит-файла не встречается одновременно в директории
+#    system- и в директории user-менеджера (независимо от ExecStart и от
+#    текущего loaded-статуса) ─────────────────────────────────────────────────
+
+_unit_file_names() {
+    local dir="$1"
+    [[ -d "$dir" ]] || return 0
+    for f in "$dir"/*.service; do
+        [[ -f "$f" ]] || continue
+        [[ "$f" == *".disabled-"* ]] && continue
+        basename "$f" .service
+    done
+}
+
+for name in $(comm -12 \
+        <(_unit_file_names "$SYSTEM_UNIT_DIR" | sort -u) \
+        <(_unit_file_names "$USER_UNIT_DIR" | sort -u)); do
+    echo "FAIL: файл юнита $name.service установлен и в system-, и в user-директории"
+    FAIL=1
 done
 
 # ── Инвариант 2: один процесс на (ExecStart, WorkingDirectory, Environment) ──
@@ -159,8 +189,14 @@ done
 
 # ── Итог ─────────────────────────────────────────────────────────────────────
 
+# bash: ${#ARR[@]} на ассоциативном массиве без единого присвоения — "unbound
+# variable" под set -u (не проявлялось раньше, т.к. на реальной машине
+# SYSTEM_EXEC/USER_EXEC никогда не пустые; ловится при прогоне на пустых
+# SYSTEM_UNIT_DIR/USER_UNIT_DIR, напр. в синтетических тестах).
+set +u
 TOTAL_SYSTEM=${#SYSTEM_EXEC[@]}
 TOTAL_USER=${#USER_EXEC[@]}
+set -u
 TOTAL=$(( TOTAL_SYSTEM + TOTAL_USER ))
 
 if [[ $FAIL -eq 0 ]]; then
