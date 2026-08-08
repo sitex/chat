@@ -99,6 +99,49 @@ def test_resolve_backend_explicit(monkeypatch):
     assert llm._resolve_backend() == "ollama"
 
 
+def test_resolve_backend_auto_fallback_logs_warning(monkeypatch, caplog):
+    """auto без единого upstream → WARNING с перечислением причин."""
+    monkeypatch.setenv("LLM_BACKEND", "auto")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(llm, "CLIPROXY_API_KEY", "")
+    monkeypatch.setattr(llm, "CLIPROXY_BASE_URL", "")
+    monkeypatch.setattr(llm, "GROK_BIN", "/nonexistent/grok")
+    monkeypatch.setattr(llm, "CLAUDE_CLI_BIN", "/nonexistent/claude")
+
+    with caplog.at_level("WARNING", logger="chatcore.llm"):
+        assert llm._resolve_backend() == "ollama"
+
+    [record] = [r for r in caplog.records if r.levelname == "WARNING"]
+    msg = record.getMessage()
+    assert "ни один из cliproxy/grok/claude-cli/claude недоступен" in msg
+    assert "cliproxy" in msg and "CLIPROXY_API_KEY" in msg
+    assert "grok" in msg and "/nonexistent/grok" in msg
+    assert "claude-cli" in msg and "/nonexistent/claude" in msg
+    assert "claude" in msg and "ANTHROPIC_API_KEY" in msg
+
+
+def test_resolve_backend_explicit_ollama_no_warning(monkeypatch, caplog):
+    """Явный LLM_BACKEND=ollama — осознанный выбор, WARNING не пишется."""
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+
+    with caplog.at_level("WARNING", logger="chatcore.llm"):
+        assert llm._resolve_backend() == "ollama"
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_resolve_backend_auto_upstream_no_warning(monkeypatch, caplog):
+    """auto → доступный cliproxy — штатная резолюция без WARNING."""
+    monkeypatch.setenv("LLM_BACKEND", "auto")
+    monkeypatch.setattr(llm, "CLIPROXY_API_KEY", "key")
+    monkeypatch.setattr(llm, "CLIPROXY_BASE_URL", "http://proxy:8317")
+
+    with caplog.at_level("WARNING", logger="chatcore.llm"):
+        assert llm._resolve_backend() == "cliproxy"
+
+    assert not [r for r in caplog.records if r.levelname == "WARNING"]
+
+
 @pytest.mark.asyncio
 async def test_generate_backend_override(monkeypatch):
     """generate(backend=...) уважает override, игнорируя LLM_BACKEND."""

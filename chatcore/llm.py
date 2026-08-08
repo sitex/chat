@@ -124,8 +124,36 @@ def _resolve_backend() -> str:
             return "grok"
         if os.path.isfile(CLAUDE_CLI_BIN):
             return "claude-cli"
-        return "claude" if os.environ.get("ANTHROPIC_API_KEY") else "ollama"
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            return "claude"
+        log.warning(
+            "LLM auto-резолюция: ни один из cliproxy/grok/claude-cli/claude "
+            "недоступен; переход на ollama: %s",
+            _describe_auto_fallback(),
+        )
+        return "ollama"
     return backend
+
+
+def _describe_auto_fallback() -> str:
+    """Перечисляет для WARNING в _resolve_backend(), почему каждый из
+    upstream-путей auto-каскада не подошёл."""
+    missing_cliproxy = [
+        name
+        for name, val in (
+            ("CLIPROXY_API_KEY", CLIPROXY_API_KEY),
+            ("CLIPROXY_BASE_URL", CLIPROXY_BASE_URL),
+        )
+        if not val
+    ]
+    return "; ".join(
+        [
+            f"cliproxy: не задан(ы) {', '.join(missing_cliproxy)}",
+            f"grok: бинарник не найден ({GROK_BIN})",
+            f"claude-cli: бинарник не найден ({CLAUDE_CLI_BIN})",
+            "claude: не задан ANTHROPIC_API_KEY",
+        ]
+    )
 
 
 def _flatten_messages(messages: list[dict]) -> str:
