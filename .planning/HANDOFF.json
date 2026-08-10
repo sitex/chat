@@ -24,6 +24,13 @@
   ],
   "remaining_tasks": [],
   "blockers": [],
+  "constraints": [
+    {
+      "description": "Markdown с обратными кавычками нельзя передавать внутри двойных кавычек Bash: shell выполнит содержимое как command substitution.",
+      "severity": "advisory",
+      "mitigation": "Для gh issue create/edit/comment с Markdown использовать --body-file или quoted heredoc."
+    }
+  ],
   "human_actions_pending": [],
   "decisions": [
     {
