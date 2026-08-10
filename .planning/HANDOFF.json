@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-10T11:44:29.916Z",
+  "phase": null,
+  "phase_name": null,
+  "phase_dir": null,
+  "plan": null,
+  "task": null,
+  "total_tasks": 2,
+  "status": "paused",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Независимо валидировать WARNING auto→ollama",
+      "status": "done",
+      "commit": "a42e9f5"
+    },
+    {
+      "id": 2,
+      "name": "Сохранить план отдельным коммитом",
+      "status": "done",
+      "commit": "c6a7be9"
+    }
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Не включать .claude/settings.json в коммиты реализации и плана.",
+      "rationale": "Правка не относится к issue #30 и была явно исключена пользователем.",
+      "phase": null
+    },
+    {
+      "decision": "Сохранить реализационный план отдельным документационным коммитом.",
+      "rationale": "Это устраняет единственное отклонение, найденное при валидации.",
+      "phase": null
+    }
+  ],
+  "uncommitted_files": [
+    ".claude/settings.json"
+  ],
+  "next_action": "Если будет новая задача, сначала отдельно определить судьбу пользовательской правки .claude/settings.json.",
+  "context_notes": "Активная GSD-фаза, spike, sketch, deliberation и research-контекст не обнаружены. Валидация issue #30 завершена; связанный журнал создан в закрытом issue #35."
+}
