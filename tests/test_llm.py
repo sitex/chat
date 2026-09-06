@@ -36,8 +36,10 @@ class _HangProc:
         self.returncode = None
         self.wait_called = False
         self.killed = False
+        self.started = asyncio.Event()
 
     async def communicate(self):
+        self.started.set()
         await asyncio.sleep(9999)
         return b"", b""
 
@@ -177,6 +179,38 @@ async def test_grok_cascades_to_claude_cli(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_grok_fallback_log_does_not_include_stderr(monkeypatch, caplog):
+    secret = b"SYNTHETIC_SECRET_MARKER"
+
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=17, stdout=b"", stderr=secret)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(llm, "_claude_cli", _ok)
+
+    out = await llm._cascade("grok", "sys", MSGS)
+
+    assert out == "fallback reply"
+    assert secret.decode() not in caplog.text
+    assert "grok empty output (rc=17)" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_grok_invalid_utf8_uses_fixed_error_in_fallback_log(monkeypatch, caplog):
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=19, stdout=b"invalid-utf8:\xff", stderr=b"")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setattr(llm, "_claude_cli", _ok)
+
+    out = await llm._cascade("grok", "sys", MSGS)
+
+    assert out == "fallback reply"
+    assert "grok invalid output (rc=19)" in caplog.text
+    assert "can't decode byte" not in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_summarize_falls_back_to_cascade(monkeypatch):
     """summarize() при падении _summary_cli фолбэчит на LLM-каскад."""
     monkeypatch.setenv("LLM_BACKEND", "ollama")
@@ -210,12 +244,15 @@ async def test_claude_cli_passes_model_flag(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_claude_cli_raises_on_nonzero_rc(monkeypatch):
+    secret = b"SYNTHETIC_SECRET_MARKER"
+
     async def _fake_exec(*args, **kwargs):
-        return _FakeProc(rc=1, stdout=b"", stderr=b"auth error")
+        return _FakeProc(rc=1, stdout=b"", stderr=secret)
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
-    with pytest.raises(RuntimeError, match="rc=1"):
+    with pytest.raises(RuntimeError, match="rc=1") as exc_info:
         await llm._claude_cli("sys", MSGS)
+    assert secret.decode() not in str(exc_info.value)
 
 
 @pytest.mark.asyncio
@@ -229,13 +266,18 @@ async def test_claude_cli_raises_on_empty_output(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_claude_cli_raises_on_login_prompt(monkeypatch):
+async def test_claude_cli_raises_on_login_prompt(monkeypatch, caplog):
+    secret = "SYNTHETIC_STDOUT_SECRET"
+
     async def _fake_exec(*args, **kwargs):
-        return _FakeProc(rc=0, stdout=b"Please run /login to authenticate", stderr=b"")
+        stdout = f"Please run /login to authenticate: {secret}".encode()
+        return _FakeProc(rc=0, stdout=stdout, stderr=b"")
 
     monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
-    with pytest.raises(RuntimeError, match="invalid output"):
-        await llm._claude_cli("sys", MSGS)
+    with pytest.raises(RuntimeError, match="invalid output") as exc_info:
+        await llm._cascade("claude-cli", "sys", MSGS)
+    assert secret not in str(exc_info.value)
+    assert secret not in caplog.text
 
 
 # ── регрессия 3: строгий режим claude-cli (нет фолбэков на cliproxy/ollama) ────
@@ -307,6 +349,75 @@ async def test_summary_cli_timeout_calls_wait(monkeypatch):
 
     assert proc.killed
     assert proc.wait_called
+
+
+@pytest.mark.parametrize(
+    ("function_name", "args"),
+    [
+        ("_grok", ("sys", MSGS)),
+        ("_claude_cli", ("sys", MSGS)),
+        ("_summary_cli", ("some prompt",)),
+    ],
+)
+@pytest.mark.asyncio
+async def test_cli_cancellation_kills_and_reaps(
+    monkeypatch, function_name, args
+):
+    proc = _HangProc()
+
+    async def _fake_exec(*_args, **_kwargs):
+        return proc
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    operation = getattr(llm, function_name)
+    task = asyncio.create_task(operation(*args))
+    await asyncio.wait_for(proc.started.wait(), timeout=1)
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert proc.killed
+    assert proc.wait_called
+
+
+@pytest.mark.asyncio
+async def test_summary_cli_error_does_not_include_stderr(monkeypatch, caplog):
+    secret = b"SYNTHETIC_SECRET_MARKER"
+
+    async def _fake_exec(*args, **kwargs):
+        return _FakeProc(rc=23, stdout=b"", stderr=secret)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.summarize("", [{"role": "user", "content": "тест"}], "ru")
+
+    assert out == "fallback reply"
+    assert secret.decode() not in caplog.text
+    assert "claude -p rc=23" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_summary_login_output_uses_fixed_error_in_fallback_log(
+    monkeypatch, caplog
+):
+    secret = "SYNTHETIC_SUMMARY_STDOUT_SECRET"
+
+    async def _fake_exec(*args, **kwargs):
+        stdout = f"Please run /login to authenticate: {secret}".encode()
+        return _FakeProc(rc=0, stdout=stdout, stderr=b"")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
+    monkeypatch.setenv("LLM_BACKEND", "ollama")
+    monkeypatch.setattr(llm, "_ollama", _ok)
+
+    out = await llm.summarize("", [{"role": "user", "content": "тест"}], "ru")
+
+    assert out == "fallback reply"
+    assert secret not in caplog.text
+    assert "claude -p invalid output" in caplog.text
 
 
 # ── Phase 2.2: deadline-aware бюджет каскада ──────────────────────────────────

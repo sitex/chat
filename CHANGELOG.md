@@ -1,8 +1,11 @@
 # Changelog — chatcore (sitex/chat)
 
-## [0.1.15] — 2026-08-07
+## [0.1.15] — 2026-09-06
 
 ### Fixed
+- `chatcore/llm.py`: ошибки Grok, Claude CLI и суммаризатора больше не
+  включают содержимое `stderr` в исключения и журналы fallback; категория
+  ошибки и код возврата сохранены (#36).
 - `scripts/check_single_instance.sh`: идентификация инстанса переведена с
   «первый токен ExecStart» на триплет ExecStart+WorkingDirectory+Environment,
   сверяемый с `/proc/<pid>/cwd` и `/proc/<pid>/environ` — устраняет ложные
