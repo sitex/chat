@@ -149,14 +149,16 @@ async def _grok(system: str, messages: list[dict]) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=GROK_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
         await _kill_and_reap(proc)
         raise
-    out = stdout.decode().strip()
+    try:
+        out = stdout.decode().strip()
+    except UnicodeDecodeError:
+        raise RuntimeError(f"grok invalid output (rc={proc.returncode})") from None
     if not out:
-        err = stderr.decode(errors="replace")[:200]
-        raise RuntimeError(f"grok empty output (rc={proc.returncode}): {err}")
+        raise RuntimeError(f"grok empty output (rc={proc.returncode})")
     return out
 
 
@@ -171,17 +173,15 @@ async def _claude_cli(system: str, messages: list[dict]) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
+        stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CLAUDE_CLI_TIMEOUT)
     except (asyncio.TimeoutError, asyncio.CancelledError):
         await _kill_and_reap(proc)
         raise
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"claude-cli rc={proc.returncode}: {stderr.decode(errors='replace')[:200]}"
-        )
+        raise RuntimeError(f"claude-cli rc={proc.returncode}")
     out = stdout.decode(errors="replace").strip()
     if not out or "Please run /login" in out:
-        raise RuntimeError(f"claude-cli invalid output: {out[:100]!r}")
+        raise RuntimeError("claude-cli invalid output")
     return out
 
 
@@ -408,19 +408,19 @@ async def _summary_cli(prompt: str) -> str:
         stderr=asyncio.subprocess.PIPE,
     )
     try:
-        stdout, stderr = await asyncio.wait_for(
+        stdout, _ = await asyncio.wait_for(
             proc.communicate(), timeout=SUMMARY_TIMEOUT
         )
     except (asyncio.TimeoutError, asyncio.CancelledError):
         await _kill_and_reap(proc)
         raise
     if proc.returncode != 0:
-        raise RuntimeError(
-            f"claude -p rc={proc.returncode}: {stderr.decode(errors='replace')[:200]}"
-        )
+        raise RuntimeError(f"claude -p rc={proc.returncode}")
     out = stdout.decode(errors="replace").strip()
     if not out:
         raise RuntimeError("claude -p returned empty output")
+    if "Please run /login" in out:
+        raise RuntimeError("claude -p invalid output")
     return out
 
 
