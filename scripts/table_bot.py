@@ -134,7 +134,7 @@ def start_table(chat: int, topic: str, personas: str | None = None) -> None:
                    LLM_OVERALL_TIMEOUT="120",
                    LLM_MAX_TOKENS=CONF.get("TABLE_LLM_MAX_TOKENS", "250"))
         # cliproxy-креды и бэкенд режиссёра — из ~/.table-bot.env
-        for k in ("CLIPROXY_BASE_URL", "CLIPROXY_API_KEY", "CLIPROXY_MODEL"):
+        for k in ("CLIPROXY_BASE_URL", "CLIPROXY_API_KEY", "CLIPROXY_MODEL", "CLIPROXY_FALLBACK_MODEL"):
             if CONF.get(k):
                 env[k] = CONF[k]
         director = CONF.get(

@@ -1,4 +1,4 @@
-"""LLM-движок: claude-cli → cliproxy → ollama (и другие бэкенды).
+"""LLM-движок: прямой CLIProxyAPI и опциональные legacy-бэкенды.
 
 Выбор через переменные окружения:
   LLM_BACKEND=auto|grok|cliproxy|claude-cli|claude|ollama
@@ -10,6 +10,7 @@
   CLIPROXY_BASE_URL=         (cliproxyapi; оставить пустым если не используется)
   CLIPROXY_API_KEY=...
   CLIPROXY_MODEL=claude-sonnet-4-6
+  CLIPROXY_FALLBACK_MODEL=gpt-5.6-terra (optional retry for provider 401/403/429/5xx)
   GROK_BIN=~/.grok/bin/grok  (путь к Grok CLI)
   CLAUDE_CLI_BIN=~/.nvm/versions/node/v22.19.0/bin/claude  (путь к claude CLI)
   CLAUDE_CLI_TIMEOUT=45
@@ -29,8 +30,9 @@ Persona-break на cliproxy+claude-OAuth решён (проверено 2026-07-
   первый system-блок "You are Claude Code..." проходит OAuth-проверку
   Anthropic; персона — вторым блоком. Без UA-обхода Anthropic отклоняет
   и кредо уходит в кулдаун. _cliproxy() применяет обход для claude-моделей.
-  backend=claude-cli оставлен в строгом режиме как страховка на случай
-  изменений поведения CLIProxyAPI; фолбэка на cliproxy/ollama НЕТ.
+  LLM_BACKEND=cliproxy — прямой HTTP-путь без CLI-фолбэков. При заданном
+  CLIPROXY_FALLBACK_MODEL provider 401/403/429/5xx один раз повторяется
+  с этой моделью через тот же HTTP transport.
 
 Метка ассистента в «плоском» тексте для grok берётся из chatcore.config.
 
@@ -76,19 +78,17 @@ GROK_TIMEOUT: int
 CLAUDE_CLI_BIN: str
 CLAUDE_CLI_TIMEOUT: int
 CLAUDE_CLI_MODEL: str
-SUMMARY_MODEL: str
-SUMMARY_TIMEOUT: int
 CLIPROXY_BASE_URL: str
 CLIPROXY_API_KEY: str
 CLIPROXY_MODEL: str
+cliproxy_fallback_model: str
 
 
 def _read_env() -> None:
     global GROK_BIN, CLAUDE_MODEL, OLLAMA_HOST, OLLAMA_MODEL, MAX_TOKENS
     global LLM_TIMEOUT, LLM_OVERALL_TIMEOUT, GROK_TIMEOUT
     global CLAUDE_CLI_BIN, CLAUDE_CLI_TIMEOUT, CLAUDE_CLI_MODEL
-    global SUMMARY_MODEL, SUMMARY_TIMEOUT
-    global CLIPROXY_BASE_URL, CLIPROXY_API_KEY, CLIPROXY_MODEL
+    global CLIPROXY_BASE_URL, CLIPROXY_API_KEY, CLIPROXY_MODEL, cliproxy_fallback_model
     GROK_BIN = os.path.expanduser(os.environ.get("GROK_BIN", "~/.grok/bin/grok"))
     CLAUDE_MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-4-6")
     OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
@@ -102,11 +102,10 @@ def _read_env() -> None:
     )
     CLAUDE_CLI_TIMEOUT = int(os.environ.get("CLAUDE_CLI_TIMEOUT", "45"))
     CLAUDE_CLI_MODEL = os.environ.get("CLAUDE_CLI_MODEL", "sonnet")
-    SUMMARY_MODEL = os.environ.get("SUMMARY_MODEL", "sonnet")
-    SUMMARY_TIMEOUT = int(os.environ.get("SUMMARY_TIMEOUT", "60"))
     CLIPROXY_BASE_URL = os.environ.get("CLIPROXY_BASE_URL", "")
     CLIPROXY_API_KEY = os.environ.get("CLIPROXY_API_KEY", "")
     CLIPROXY_MODEL = os.environ.get("CLIPROXY_MODEL", "claude-sonnet-4-6")
+    cliproxy_fallback_model = os.environ.get("CLIPROXY_FALLBACK_MODEL", "")
 
 
 reload_env = _read_env
@@ -217,12 +216,13 @@ _CLAUDE_CODE_PREFIX = "You are Claude Code, Anthropic's official CLI for Claude.
 _CLIPROXY_CLAUDE_UA = {"User-Agent": "claude-cli/2.1.63 (external, cli)"}
 
 
-async def _cliproxy(system: str, messages: list[dict]) -> str:
+async def _cliproxy(system: str, messages: list[dict], model: str | None = None) -> str:
     from anthropic import AsyncAnthropic
 
+    selected_model = model or CLIPROXY_MODEL
     kwargs: dict = {}
     sys_param: str | list[dict] = system
-    if CLIPROXY_MODEL.startswith("claude"):
+    if selected_model.startswith("claude"):
         # CLIProxyAPI для OAuth-кредов затирает пользовательский system
         # (sanitizeForwardedSystemPrompt). UA claude-cli отключает клоакинг
         # (cloak_mode=auto), а первый блок "You are Claude Code..." проходит
@@ -239,7 +239,7 @@ async def _cliproxy(system: str, messages: list[dict]) -> str:
     ) as client:
         resp = await asyncio.wait_for(
             client.messages.create(
-                model=CLIPROXY_MODEL,
+                model=selected_model,
                 max_tokens=MAX_TOKENS,
                 system=sys_param,  # type: ignore[arg-type]
                 messages=messages,  # type: ignore[arg-type]
@@ -247,6 +247,29 @@ async def _cliproxy(system: str, messages: list[dict]) -> str:
             timeout=LLM_TIMEOUT,
         )
     return "".join(b.text for b in resp.content if b.type == "text").strip()
+
+
+async def _cliproxy_with_fallback(system: str, messages: list[dict[str, str]]) -> str:
+    from anthropic import APIStatusError
+
+    try:
+        return await _cliproxy(system, messages)
+    except APIStatusError as error:
+        status = error.status_code
+        fallback_model = cliproxy_fallback_model
+        if (
+            fallback_model
+            and fallback_model != CLIPROXY_MODEL
+            and (status in {401, 403, 429} or status >= 500)
+        ):
+            log.warning(
+                "cliproxy model fallback status=%s primary_model=%s fallback_model=%s",
+                status,
+                CLIPROXY_MODEL,
+                fallback_model,
+            )
+            return await _cliproxy(system, messages, model=fallback_model)
+        raise
 
 
 async def _claude(system: str, messages: list[dict]) -> str:
@@ -301,19 +324,7 @@ async def _attempt(
 
 async def _cascade(backend: str, system: str, messages: list[dict], deadline: float | None = None) -> str:
     if backend == "cliproxy":
-        try:
-            return await _attempt(_cliproxy, system, messages, deadline)
-        except asyncio.TimeoutError:
-            raise
-        except Exception as e:
-            log.warning("cliproxy failed (%s), falling back to grok", e)
-        try:
-            return await _attempt(_grok, system, messages, deadline)
-        except asyncio.TimeoutError:
-            raise
-        except Exception as e:
-            log.warning("grok fallback failed (%s), falling back to ollama", e)
-        return await _attempt(_ollama, system, messages, deadline)
+        return await _attempt(_cliproxy_with_fallback, system, messages, deadline)
 
     if backend == "grok":
         try:
@@ -425,49 +436,11 @@ def _summary_prompt(prev_summary: str, folded: list[dict], lang: str) -> str:
     )
 
 
-async def _summary_cli(prompt: str) -> str:
-    """Суммаризация через headless Claude Code CLI (`claude -p`)."""
-    args = [CLAUDE_CLI_BIN, "-p", prompt]
-    if SUMMARY_MODEL:
-        args += ["--model", SUMMARY_MODEL]
-    proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(), timeout=SUMMARY_TIMEOUT
-        )
-    except (asyncio.TimeoutError, asyncio.CancelledError):
-        await _kill_and_reap(proc)
-        raise
-    if proc.returncode != 0:
-        raise RuntimeError(
-            f"claude -p rc={proc.returncode}: {stderr.decode(errors='replace')[:200]}"
-        )
-    out = stdout.decode(errors="replace").strip()
-    if not out:
-        raise RuntimeError("claude -p returned empty output")
-    return out
-
-
 async def summarize(prev_summary: str, folded: list[dict], lang: str = "ru") -> str:
-    """Свернуть старые реплики в обновлённое резюме.
-
-    Предпочитает `claude -p` (бесплатно по Max-подписке); при ошибке —
-    фолбэк на активный LLM-каскад.
-    """
     prompt = _summary_prompt(prev_summary, folded, lang)
-    try:
-        return await _summary_cli(prompt)
-    except Exception as e:
-        log.warning("summarize via claude-cli failed (%s), falling back to cascade", e)
-        system = (
-            "Ты — ассистент, который сжимает диалог в краткое точное резюме."
-            if lang == "ru"
-            else "You compress a dialogue into a concise, accurate summary."
-        )
-        return await _cascade(
-            _resolve_backend(), system, [{"role": "user", "content": prompt}]
-        )
+    system = (
+        "Ты — ассистент, который сжимает диалог в краткое точное резюме."
+        if lang == "ru"
+        else "You compress a dialogue into a concise, accurate summary."
+    )
+    return await _cliproxy_with_fallback(system, [{"role": "user", "content": prompt}])

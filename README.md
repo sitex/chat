@@ -30,7 +30,7 @@ scaffold.run(
 ```
 chatcore/
 ├── config.py       # setup() — пути data/db, метки ролей
-├── llm.py          # LLM-каскад: cliproxy → grok → claude-cli → claude → ollama
+├── llm.py          # LLM: прямой CLIProxyAPI; legacy-бэкенды доступны только по явному выбору
 ├── memory.py       # SQLite: история + настройки + namespaced seen-state
 ├── data_store.py   # Hot-reload JSON-загрузчик (data/*.json)
 ├── persona.py      # Сборка system prompt из persona.json

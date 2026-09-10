@@ -1,5 +1,18 @@
 # Changelog — chatcore (sitex/chat)
 
+## [0.1.17] — 2026-09-11
+
+### Changed
+- `LLM_BACKEND=cliproxy` теперь является строгим прямым HTTP-путём: ошибка
+  CLIProxyAPI, включая 401, возвращается вызывающему коду без запуска Grok,
+  Claude или другого AI CLI. Rolling summary также использует тот же прямой
+  CLIProxyAPI transport и модель `CLIPROXY_MODEL`; `_summary_cli` удалён.
+- При `CLIPROXY_FALLBACK_MODEL` provider 401/403/429/5xx получает одну
+  дополнительную попытку на указанной модели через тот же HTTP transport;
+  malformed 4xx и совпадающая primary/fallback модель не повторяются.
+- `table_bot.py` передаёт `CLIPROXY_FALLBACK_MODEL` в круглый стол, чтобы
+  резервная модель также использовала прямой HTTP.
+
 ## [0.1.16] — 2026-08-08
 
 ### Changed

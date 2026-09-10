@@ -6,6 +6,8 @@
 """
 import asyncio
 
+import anthropic
+import httpx
 import pytest
 
 from chatcore import llm
@@ -74,14 +76,76 @@ async def test_generate_honours_overall_timeout(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cliproxy_cascades_to_ollama(monkeypatch):
-    monkeypatch.setenv("LLM_BACKEND", "cliproxy")
-    monkeypatch.setattr(llm, "_cliproxy", _fail)
-    monkeypatch.setattr(llm, "_grok", _fail)
-    monkeypatch.setattr(llm, "_ollama", _ok)
+def _status_error(status: int) -> anthropic.APIStatusError:
+    request = httpx.Request("POST", "http://proxy.test/v1/messages")
+    response = httpx.Response(status, request=request)
+    return anthropic.APIStatusError("provider unavailable", response=response, body={})
 
-    out = await llm.generate("sys", MSGS)
-    assert out == "fallback reply"
+
+@pytest.mark.parametrize("status", [401, 403, 429, 500, 503])
+async def test_cliproxy_retryable_provider_status_uses_http_model_fallback(monkeypatch, caplog, status):
+    monkeypatch.setenv("LLM_BACKEND", "cliproxy")
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(llm, "cliproxy_fallback_model", "gpt-5.6-terra")
+    calls: list[str] = []
+
+    async def _primary_then_fallback(*_a, model=None, **_k):
+        calls.append(model or llm.CLIPROXY_MODEL)
+        if len(calls) == 1:
+            raise _status_error(status)
+        return "fallback reply"
+
+    async def _cli_fallback(*_a, **_k):
+        pytest.fail("direct cliproxy must not launch an AI CLI fallback")
+
+    monkeypatch.setattr(llm, "_cliproxy", _primary_then_fallback)
+    monkeypatch.setattr(llm, "_grok", _cli_fallback)
+    monkeypatch.setattr(llm, "_ollama", _cli_fallback)
+
+    with caplog.at_level("WARNING", logger="chatcore.llm"):
+        result = await llm.generate("sys", [{"role": "user", "content": "unit-secret"}])
+
+    assert result == "fallback reply"
+    assert calls == ["claude-sonnet-4-6", "gpt-5.6-terra"]
+    assert "unit-secret" not in "\n".join(record.getMessage() for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_cliproxy_bad_request_does_not_retry(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "cliproxy")
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(llm, "cliproxy_fallback_model", "gpt-5.6-terra")
+    calls: list[str] = []
+
+    async def _bad_request(*_a, model=None, **_k):
+        calls.append(model or llm.CLIPROXY_MODEL)
+        raise _status_error(400)
+
+    monkeypatch.setattr(llm, "_cliproxy", _bad_request)
+
+    with pytest.raises(anthropic.APIStatusError):
+        await llm.generate("sys", MSGS)
+
+    assert calls == ["claude-sonnet-4-6"]
+
+
+@pytest.mark.asyncio
+async def test_cliproxy_does_not_retry_the_same_fallback_model(monkeypatch):
+    monkeypatch.setenv("LLM_BACKEND", "cliproxy")
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "gpt-5.6-terra")
+    monkeypatch.setattr(llm, "cliproxy_fallback_model", "gpt-5.6-terra")
+    calls: list[str] = []
+
+    async def _failure(*_a, model=None, **_k):
+        calls.append(model or llm.CLIPROXY_MODEL)
+        raise _status_error(503)
+
+    monkeypatch.setattr(llm, "_cliproxy", _failure)
+
+    with pytest.raises(anthropic.APIStatusError):
+        await llm.generate("sys", MSGS)
+
+    assert calls == ["gpt-5.6-terra"]
 
 
 @pytest.mark.asyncio
@@ -220,14 +284,26 @@ async def test_grok_cascades_to_claude_cli(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_summarize_falls_back_to_cascade(monkeypatch):
-    """summarize() при падении _summary_cli фолбэчит на LLM-каскад."""
-    monkeypatch.setenv("LLM_BACKEND", "ollama")
-    monkeypatch.setattr(llm, "_summary_cli", _fail)
-    monkeypatch.setattr(llm, "_ollama", _ok)
+async def test_summarize_uses_direct_proxy_without_subprocess(monkeypatch):
+    async def _subprocess_forbidden(*_a, **_k):
+        pytest.fail("summary must not launch an AI CLI subprocess")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _subprocess_forbidden)
+    monkeypatch.setattr(llm, "CLIPROXY_MODEL", "claude-sonnet-4-6")
+    monkeypatch.setattr(llm, "cliproxy_fallback_model", "gpt-5.6-terra")
+    calls: list[str] = []
+
+    async def _summary_fallback(*_a, model=None, **_k):
+        calls.append(model or llm.CLIPROXY_MODEL)
+        if len(calls) == 1:
+            raise _status_error(503)
+        return "fallback reply"
+
+    monkeypatch.setattr(llm, "_cliproxy", _summary_fallback)
 
     result = await llm.summarize("", [{"role": "user", "content": "тест"}], "ru")
     assert result == "fallback reply"
+    assert calls == ["claude-sonnet-4-6", "gpt-5.6-terra"]
 
 
 # ── регрессия 1: _claude_cli передаёт --model ─────────────────────────────────
@@ -334,24 +410,6 @@ async def test_claude_cli_timeout_calls_wait(monkeypatch):
     assert proc.wait_called
 
 
-@pytest.mark.asyncio
-async def test_summary_cli_timeout_calls_wait(monkeypatch):
-    """При таймауте _summary_cli должен вызывать wait() (не оставлять зомби)."""
-    proc = _HangProc()
-
-    async def _fake_exec(*args, **kwargs):
-        return proc
-
-    monkeypatch.setattr(asyncio, "create_subprocess_exec", _fake_exec)
-    monkeypatch.setattr(llm, "SUMMARY_TIMEOUT", 0.05)
-
-    with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
-        await llm._summary_cli("some prompt")
-
-    assert proc.killed
-    assert proc.wait_called
-
-
 # ── Phase 2.2: deadline-aware бюджет каскада ──────────────────────────────────
 
 @pytest.mark.asyncio
@@ -440,6 +498,7 @@ async def test_cliproxy_claude_model_adds_ua_and_prefix(monkeypatch):
 
     await llm._cliproxy("Персона-система", MSGS)
 
+    assert create_kw["model"] == "claude-sonnet-4-6"
     assert init_kw.get("default_headers", {}).get("User-Agent", "").startswith("claude-cli")
     system = create_kw["system"]
     assert isinstance(system, list) and len(system) == 2
@@ -465,6 +524,7 @@ async def test_cliproxy_non_claude_model_no_ua(monkeypatch):
 
     await llm._cliproxy("Простая-система", MSGS)
 
+    assert create_kw["model"] == "grok-3-mini"
     assert "default_headers" not in init_kw
     assert create_kw["system"] == "Простая-система"
 

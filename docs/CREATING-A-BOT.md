@@ -258,6 +258,6 @@ def test_something(tmp_path):
 
 ## Устранение неполадок
 
-- **Бот молчит на текст**: проверь `LLM_BACKEND` и наличие ключей. Фолбэк — ollama локально.
+- **Бот молчит на текст**: проверь `LLM_BACKEND=cliproxy`, `CLIPROXY_BASE_URL` и ключ. Ошибка прокси намеренно не запускает AI CLI-фолбэк; `CLIPROXY_FALLBACK_MODEL` может один раз переключить provider 401/403/429/5xx на другую модель через тот же HTTP transport.
 - **Ошибка импорта chatcore**: `pip install -e ../chat` в venv проекта.
 - **Бот отвечает на русском даже при /lang en**: убедись что `user_label` в config.setup не кириллический (влияет на _flatten_messages в grok-режиме).
